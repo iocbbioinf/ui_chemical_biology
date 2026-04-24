@@ -43,8 +43,6 @@ function parseMzML(xmlText) {
   const root = doc.querySelector('mzML') ?? doc.querySelector('indexedmzML > mzML')
   if (!root) throw new Error('No <mzML> element found')
 
-  // ── MSRun-level metadata ────────────────────────────────────────────────────
-
   const cvList = [...root.querySelectorAll(':scope > cvList > cv')].map(cv => ({
     cv_ref: attr(cv, 'id'), full_name: attr(cv, 'fullName'),
     version: attr(cv, 'version'), uri: attr(cv, 'URI'),
@@ -174,8 +172,6 @@ function parseMzML(xmlText) {
     }
   })
 
-  // ── Spectra ─────────────────────────────────────────────────────────────────
-
   const spectra = [...(spectrumListEl?.querySelectorAll(':scope > spectrum') ?? [])].map(sp => {
     const cvs = parseCvParams(sp)
     const spectrum_type           = cvs.find(c => ['MS:1000579','MS:1000580'].includes(c.accession))
@@ -293,6 +289,150 @@ function parseMzML(xmlText) {
   return { msrun, spectra }
 }
 
+// ── SpectrumPage ──────────────────────────────────────────────────────────────
+
+function SpectrumPage({ spectrumId, onBack, apiFetch }) {
+  const [record,  setRecord]  = useState(null)
+  const [msrun,   setMsrun]   = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+
+  useState(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true); setError('')
+      const { ok, json } = await apiFetch(`/api/spectrum/${spectrumId}`)
+      if (!ok || cancelled) { setError(json?.message || 'Failed to load spectrum'); setLoading(false); return }
+      setRecord(json)
+      const msrunId = json.metadata?.msrun?.id
+      if (msrunId) {
+        const { ok: mok, json: mj } = await apiFetch(`/api/msrun/${msrunId}`)
+        if (!cancelled && mok) setMsrun(mj)
+      }
+      if (!cancelled) setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [spectrumId])
+
+  if (loading) return <div className="card"><p className="hint">Loading…</p></div>
+  if (error)   return <div className="card"><p className="error">{error}</p></div>
+
+  const m = record.metadata ?? {}
+  const cvVal = (params, acc) => params?.find(p => p.accession === acc)?.value
+
+  const retentionTime = cvVal(m.scan_list?.scans?.[0]?.cv_params, 'MS:1000016')
+  const msLevel       = cvVal(m.spectrum_cv_params, 'MS:1000511')
+  const basePeakMz    = cvVal(m.spectrum_cv_params, 'MS:1000504')
+  const basePeakInt   = cvVal(m.spectrum_cv_params, 'MS:1000505')
+  const tic           = cvVal(m.spectrum_cv_params, 'MS:1000285')
+  const lowestMz      = cvVal(m.spectrum_cv_params, 'MS:1000528')
+  const highestMz     = cvVal(m.spectrum_cv_params, 'MS:1000527')
+  const filterStr     = cvVal(m.scan_list?.scans?.[0]?.cv_params, 'MS:1000512')
+
+  const pre          = m.precursor_list?.[0]
+  const selIon       = pre?.selected_ions?.[0]
+  const dissociation = pre?.activation?.dissociation_method?.title?.en ?? pre?.activation?.dissociation_method?.id
+
+  const ic           = msrun?.metadata?.instrument_configurations?.[0]
+  const instrument   = ic?.instrument_model?.name
+    ?? ic?.analyzers?.map(a => a.mass_analyzer_type?.name).filter(Boolean).join(' / ')
+  const ionization   = ic?.sources?.[0]?.ionization_type?.name
+
+  function Row({ label, value }) {
+    if (value == null || value === '') return null
+    return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
+  }
+
+  return (
+    <div>
+      <button className="btn-secondary btn-sm" onClick={onBack} style={{ marginBottom: '1rem' }}>
+        ← Back to results
+      </button>
+
+      <section className="card">
+        <h2 className="sp-title">{m.native_id ?? record.id}</h2>
+        <p className="hint">{m.title}</p>
+
+        <div className="sp-grid">
+          <div>
+            <h3 className="sp-section">Spectrum</h3>
+            <table className="sp-table">
+              <tbody>
+                <Row label="Spectrum type"       value={m.spectrum_type?.title?.en} />
+                <Row label="Representation"      value={m.spectrum_representation?.title?.en} />
+                <Row label="Polarity"            value={m.scan_polarity?.title?.en} />
+                <Row label="MS level"            value={msLevel} />
+                <Row label="Retention time"      value={retentionTime ? `${parseFloat(retentionTime).toFixed(4)} min` : null} />
+                <Row label="Base peak m/z"       value={basePeakMz ? parseFloat(basePeakMz).toFixed(4) : null} />
+                <Row label="Base peak intensity" value={basePeakInt ? parseFloat(basePeakInt).toExponential(3) : null} />
+                <Row label="Total ion current"   value={tic ? parseFloat(tic).toExponential(3) : null} />
+                <Row label="m/z range"           value={lowestMz && highestMz ? `${parseFloat(lowestMz).toFixed(3)} – ${parseFloat(highestMz).toFixed(3)}` : null} />
+                <Row label="Filter string"       value={filterStr} />
+              </tbody>
+            </table>
+
+            {pre && <>
+              <h3 className="sp-section">Precursor</h3>
+              <table className="sp-table">
+                <tbody>
+                  <Row label="Selected ion m/z"     value={selIon?.selected_ion_mz != null ? selIon.selected_ion_mz.toFixed(4) : null} />
+                  <Row label="Charge state"          value={selIon?.charge_state} />
+                  <Row label="Intensity"             value={selIon?.intensity != null ? parseFloat(selIon.intensity).toExponential(3) : null} />
+                  <Row label="Isolation target m/z"  value={pre.isolation_window?.target_mz?.toFixed(4)} />
+                  <Row label="Isolation window"      value={pre.isolation_window?.lower_offset != null ? `±${pre.isolation_window.lower_offset.toFixed(3)} Da` : null} />
+                  <Row label="Dissociation method"   value={dissociation} />
+                  <Row label="Activation energy"     value={pre.activation?.activation_energy != null ? `${pre.activation.activation_energy} eV` : null} />
+                  <Row label="Precursor scan ref"    value={pre.spectrum_ref} />
+                </tbody>
+              </table>
+            </>}
+          </div>
+
+          <div>
+            {msrun && <>
+              <h3 className="sp-section">MS Run</h3>
+              <table className="sp-table">
+                <tbody>
+                  <Row label="Run ID"     value={msrun.metadata?.run_id} />
+                  <Row label="Dataset"    value={msrun.metadata?.dataset?.metadata?.title} />
+                  <Row label="Instrument" value={instrument} />
+                  <Row label="Ionization" value={ionization} />
+                  <Row label="Started"    value={msrun.metadata?.start_time_stamp} />
+                  <Row label="Spectra"    value={msrun.metadata?.spectrum_count} />
+                </tbody>
+              </table>
+
+              {msrun.metadata?.samples?.length > 0 && <>
+                <h3 className="sp-section">Samples</h3>
+                <table className="sp-table">
+                  <tbody>
+                    {msrun.metadata.samples.map((s, i) => (
+                      <tr key={i}>
+                        <td className="sp-label">{s.name ?? s.sample_id}</td>
+                        <td>{s.cv_params?.map(p => p.value || p.name).filter(Boolean).join(', ') || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>}
+            </>}
+
+            <h3 className="sp-section">Record</h3>
+            <table className="sp-table">
+              <tbody>
+                <Row label="ID"        value={record.id} />
+                <Row label="Created"   value={record.created?.slice(0, 10)} />
+                <Row label="Published" value={m.publication_date} />
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function today() {
@@ -317,6 +457,10 @@ function App() {
   const [user, setUser]           = useState(null)
   const [loginError, setLoginError] = useState('')
   const [loggingIn, setLoggingIn] = useState(false)
+  const [showLoginModal, setShowLoginModal] = useState(false)
+
+  // ── tab state ─────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState('search')
 
   // ── record creation state ─────────────────────────────────────────────────
   const [creating, setCreating]         = useState(false)
@@ -325,18 +469,23 @@ function App() {
   const [exampleLog, setExampleLog]     = useState([])
 
   // ── mzML folder import state ──────────────────────────────────────────────
-  const [importFiles, setImportFiles]   = useState([])   // File[]
+  const [importFiles, setImportFiles]   = useState([])
   const [datasetTitle, setDatasetTitle] = useState('')
   const [importing, setImporting]       = useState(false)
   const [importLog, setImportLog]       = useState([])
   const folderInputRef = useRef(null)
 
-  // ── similarity search state ───────────────────────────────────────────────
-  const [vector, setVector]             = useState('0.1, 0.9')
-  const [k, setK]                       = useState(5)
-  const [searching, setSearching]       = useState(false)
-  const [searchResults, setSearchResults] = useState(null)
-  const [searchError, setSearchError]   = useState('')
+  // ── spectra search state ──────────────────────────────────────────────────
+  const [precursorMzMin, setPrecursorMzMin] = useState('')
+  const [precursorMzMax, setPrecursorMzMax] = useState('')
+  const [formula, setFormula]               = useState('')
+  const [organism, setOrganism]             = useState('')
+  const [searching, setSearching]           = useState(false)
+  const [searchResults, setSearchResults]   = useState(null)
+  const [searchError, setSearchError]       = useState('')
+  const [sortCol, setSortCol]               = useState(null)
+  const [sortDir, setSortDir]               = useState('asc')
+  const [spectrumPage, setSpectrumPage]     = useState(null)
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -388,11 +537,15 @@ function App() {
     setToken(json.token)
     setUser({ email: json.email })
     setLoggingIn(false)
+    setShowLoginModal(false)
+    setEmail('')
+    setPassword('')
   }
 
   function handleLogout() {
     setUser(null); setToken(''); setEmail(''); setPassword('')
     setCreateLog([]); setExampleLog([]); setImportLog([]); setSearchResults(null)
+    if (activeTab === 'import') setActiveTab('search')
   }
 
   // ── create 10 test records ────────────────────────────────────────────────
@@ -479,11 +632,11 @@ function App() {
 
   function handleFolderSelect(e) {
     const all = [...e.target.files]
-    const files = all.filter(f => f.name.toLowerCase().endsWith('.xml'))
+    const files = all.filter(f => { const n = f.name.toLowerCase(); return n.endsWith('.xml') || n.endsWith('.mzml') })
     setImportFiles(files)
     setImportLog([])
     if (all.length > 0 && files.length === 0)
-      setImportLog([`No .xml files found (${all.length} other files ignored).`])
+      setImportLog([`No .xml or .mzML files found (${all.length} other files ignored).`])
   }
 
   async function importFolder() {
@@ -493,7 +646,6 @@ function App() {
     setImportLog([])
     const log = (msg) => setImportLog(prev => [...prev, msg])
 
-    // 1. Create dataset
     log(`Creating dataset "${datasetTitle}"…`)
     const dsId = await createAndPublish('/api/dataset', {
       metadata: { ...rdmBase(), title: datasetTitle },
@@ -501,7 +653,6 @@ function App() {
     }, 'Dataset', log)
     if (!dsId) { setImporting(false); return }
 
-    // 2. Process each mzML file
     for (const file of importFiles) {
       log(`\nProcessing ${file.name}…`)
       let parsed
@@ -516,21 +667,14 @@ function App() {
       const { msrun: msrunMeta, spectra } = parsed
       log(`  Parsed: ${spectra.length} spectra, ${msrunMeta.chromatogram_list?.length ?? 0} chromatograms`)
 
-      // 3. Create MSRun record
       log(`  Creating MSRun…`)
       const msrunTitle = `${datasetTitle} – ${file.name}`
       const msrunId = await createAndPublish('/api/msrun', {
-        metadata: {
-          ...rdmBase(),
-          title: msrunTitle,
-          dataset: { id: dsId },
-          ...msrunMeta,
-        },
+        metadata: { ...rdmBase(), title: msrunTitle, dataset: { id: dsId }, ...msrunMeta },
         files: { enabled: false },
       }, 'MSRun', log)
       if (!msrunId) continue
 
-      // 4. Create Spectrum records
       log(`  Creating ${spectra.length} spectrum records…`)
       let ok = 0, fail = 0
       for (const sp of spectra) {
@@ -539,11 +683,12 @@ function App() {
             ...rdmBase(),
             title: `${file.name} – ${sp.native_id}`,
             embedding: Array.from({ length: 300 }, () => parseFloat((Math.random() * 2 - 1).toFixed(6))),
+            dataset: { id: dsId},
             msrun: { id: msrunId },
             ...sp,
           },
           files: { enabled: false },
-        }, `Spectrum ${sp.native_id}`, () => {})  // suppress per-spectrum logs to avoid noise
+        }, `Spectrum ${sp.native_id}`, () => {})
         spId ? ok++ : fail++
       }
       log(`  Spectra: ${ok} published, ${fail} failed`)
@@ -553,190 +698,382 @@ function App() {
     setImporting(false)
   }
 
-  // ── similarity search ─────────────────────────────────────────────────────
+  // ── spectra search ────────────────────────────────────────────────────────
 
-  async function similaritySearch() {
+  async function searchSpectra() {
     setSearching(true); setSearchResults(null); setSearchError('')
-    let parsed
-    try {
-      parsed = vector.split(',').map(s => {
-        const n = parseFloat(s.trim())
-        if (isNaN(n)) throw new Error(`"${s.trim()}" is not a number`)
-        return n
-      })
-    } catch (e) { setSearchError(`Invalid vector: ${e.message}`); setSearching(false); return }
 
-    const { ok, json } = await apiFetch('/api/spectrum/records/search-similar', {
-      method: 'POST',
-      body: JSON.stringify({ vector: parsed, k: parseInt(k, 10) }),
-    })
-    if (!ok) setSearchError(json.message || `Error ${json.status}`)
-    else setSearchResults(json)
+    const minMz = parseFloat(precursorMzMin)
+    const maxMz = parseFloat(precursorMzMax)
+    if (precursorMzMin !== '' && isNaN(minMz)) {
+      setSearchError('Precursor m/z min must be a number'); setSearching(false); return
+    }
+    if (precursorMzMax !== '' && isNaN(maxMz)) {
+      setSearchError('Precursor m/z max must be a number'); setSearching(false); return
+    }
+
+    const clauses = []
+    if (precursorMzMin !== '' || precursorMzMax !== '') {
+      const lo = precursorMzMin !== '' ? minMz : '*'
+      const hi = precursorMzMax !== '' ? maxMz : '*'
+      clauses.push(`metadata.precursor_list.selected_ions.selected_ion_mz:[${lo} TO ${hi}]`)
+    }
+    if (formula.trim() !== '')
+      clauses.push(`metadata.spectrum_cv_params.value:"${formula.trim()}"`)
+    if (organism.trim() !== '')
+      clauses.push(`metadata.msrun.metadata.samples.cv_params.value:"${organism.trim()}"`)
+
+    const q = clauses.length > 0 ? clauses.join(' AND ') : '*'
+    const url = `/api/spectrum?q=${encodeURIComponent(q)}&size=50`
+
+    const { ok, json } = await apiFetch(url)
+    if (!ok) { setSearchError(json.message || `Search failed (${json.status ?? 'unknown'})`); setSearching(false); return }
+
+    // collect unique msrun IDs from hits
+    const msrunIds = [...new Set(
+      (json.hits?.hits ?? []).map(h => h.metadata?.msrun?.id).filter(Boolean)
+    )]
+
+    // fetch all msrun records in parallel
+    const msrunMap = {}
+    await Promise.all(msrunIds.map(async id => {
+      const { ok: mok, json: mj } = await apiFetch(`/api/msrun/${id}`)
+      if (mok) msrunMap[id] = mj
+    }))
+
+    setSearchResults({ ...json, msrunMap })
     setSearching(false)
   }
 
   // ── render ────────────────────────────────────────────────────────────────
 
-  if (!user) {
-    return (
-      <div className="app">
-        <h1>Spectrum Admin</h1>
-        <section className="card">
-          <h2>Login</h2>
-          <form onSubmit={handleLogin}>
-            <div className="form-field">
-              <label>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="input-wide" required autoFocus />
-            </div>
-            <div className="form-field">
-              <label>Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-wide" required />
-            </div>
-            {loginError && <p className="error">{loginError}</p>}
-            <button type="submit" className="btn-primary" disabled={loggingIn} style={{ marginTop: '0.8rem' }}>
-              {loggingIn ? 'Logging in…' : 'Log in'}
-            </button>
-          </form>
-        </section>
-      </div>
-    )
-  }
-
   return (
     <div className="app">
-      <h1>Spectrum Admin</h1>
-
-      <section className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <span style={{ fontSize: '0.9rem', color: '#aaa' }}>Logged in as </span>
-            <strong>{user.email}</strong>
-            <span className="role-badge">admin</span>
-          </div>
-          <button onClick={handleLogout} className="btn-secondary">Log out</button>
-        </div>
-      </section>
-
-      {/* ── mzML folder import ── */}
-      <section className="card">
-        <h2>Import mzML Folder</h2>
-        <p className="hint">
-          Select a folder of <code>.xml</code> (mzML) files. One Dataset is created, then one MSRun
-          + its Spectrum records are created per file.
-        </p>
-
-        <div className="form-field">
-          <label>Dataset title</label>
-          <input
-            type="text"
-            value={datasetTitle}
-            onChange={e => setDatasetTitle(e.target.value)}
-            className="input-wide"
-            placeholder="e.g. My LC-MS experiment 2024"
-            disabled={importing}
-          />
-        </div>
-
-        <div className="form-field">
-          <label>mzML folder</label>
-          <div className="row" style={{ marginBottom: 0 }}>
-            <input
-              ref={folderInputRef}
-              type="file"
-              webkitdirectory=""
-              directory=""
-              multiple
-              style={{ display: 'none' }}
-              onChange={handleFolderSelect}
-            />
-            <button className="btn-secondary" onClick={() => folderInputRef.current.click()} disabled={importing}>
-              Choose folder…
+      {/* ── top navbar ── */}
+      <header className="navbar">
+        <span className="navbar-title">Spectrum Admin</span>
+        <div className="navbar-auth">
+          {user ? (
+            <div className="user-menu">
+              <span className="navbar-user">{user.email}</span>
+              <span className="role-badge">admin</span>
+              <button onClick={handleLogout} className="btn-secondary btn-sm">Log out</button>
+            </div>
+          ) : (
+            <button className="btn-primary btn-sm" onClick={() => setShowLoginModal(true)}>
+              Log in
             </button>
-            <span style={{ fontSize: '0.85rem', color: '#888', alignSelf: 'center' }}>
-              {importFiles.length > 0
-                ? `${importFiles.length} .xml file${importFiles.length > 1 ? 's' : ''} selected`
-                : 'No folder selected'}
-            </span>
+          )}
+        </div>
+      </header>
+
+      {/* ── login modal ── */}
+      {showLoginModal && (
+        <div className="modal-backdrop" onClick={() => { setShowLoginModal(false); setLoginError('') }}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>Log in</h2>
+            <form onSubmit={handleLogin}>
+              <div className="form-field">
+                <label>Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="input-wide" required autoFocus />
+              </div>
+              <div className="form-field">
+                <label>Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-wide" required />
+              </div>
+              {loginError && <p className="error">{loginError}</p>}
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => { setShowLoginModal(false); setLoginError('') }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" disabled={loggingIn}>
+                  {loggingIn ? 'Logging in…' : 'Log in'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-        {importFiles.length > 0 && (
-          <ul className="file-list">
-            {importFiles.map(f => <li key={f.name}>{f.name} <span className="file-size">({(f.size / 1024).toFixed(1)} KB)</span></li>)}
-          </ul>
-        )}
-
+      {/* ── tabs ── */}
+      <div className="tabs">
         <button
-          onClick={importFolder}
-          disabled={importing || importFiles.length === 0}
-          className="btn-primary"
-          style={{ marginTop: '0.8rem' }}
+          className={`tab${activeTab === 'search' ? ' tab-active' : ''}`}
+          onClick={() => setActiveTab('search')}
         >
-          {importing ? 'Importing…' : 'Create Dataset & Import Runs'}
+          Search
         </button>
-
-        {importLog.length > 0 && <pre className="log">{importLog.join('\n')}</pre>}
-      </section>
-
-      {/* ── test helpers ── */}
-      <section className="card">
-        <h2>Create 10 Test Records</h2>
-        <p className="hint">Creates 10 spectrum records with random 2-dim embeddings and publishes them.</p>
-        <button onClick={createRecords} disabled={creating} className="btn-primary">
-          {creating ? 'Creating…' : 'Create 10 Records'}
+        <button
+          className={`tab${activeTab === 'import' ? ' tab-active' : ''}${!user ? ' tab-locked' : ''}`}
+          onClick={() => user ? setActiveTab('import') : setShowLoginModal(true)}
+          title={!user ? 'Log in to access dataset import' : undefined}
+        >
+          Import Dataset
+          {!user && <span className="lock-icon">🔒</span>}
         </button>
-        {createLog.length > 0 && <pre className="log">{createLog.join('\n')}</pre>}
-      </section>
+      </div>
 
-      <section className="card">
-        <h2>Create MS Dataset Example</h2>
-        <p className="hint">
-          Creates one Dataset, one MSRun, and one Spectrum record from <code>tiny.pwiz.1.1.mzML</code> data.
-        </p>
-        <button onClick={createMSDatasetExample} disabled={creatingExample} className="btn-primary">
-          {creatingExample ? 'Creating…' : 'Create MS Dataset Example'}
-        </button>
-        {exampleLog.length > 0 && <pre className="log">{exampleLog.join('\n')}</pre>}
-      </section>
+      {/* ── search tab ── */}
+      {activeTab === 'search' && spectrumPage && (
+        <SpectrumPage
+          spectrumId={spectrumPage}
+          onBack={() => setSpectrumPage(null)}
+          apiFetch={apiFetch}
+        />
+      )}
+      {activeTab === 'search' && !spectrumPage && (
+        <section className="card">
+          <h2>Search Spectra</h2>
 
-      {/* ── similarity search ── */}
-      <section className="card">
-        <h2>Similarity Search</h2>
-        <div className="row">
-          <label className="grow">
-            Vector (comma-separated floats)
-            <input type="text" value={vector} onChange={e => setVector(e.target.value)} className="input-wide" placeholder="0.1, 0.9" />
-          </label>
-          <label>
-            k
-            <input type="number" value={k} onChange={e => setK(e.target.value)} className="input-k" min={1} max={100} />
-          </label>
-        </div>
-        <button onClick={similaritySearch} disabled={searching} className="btn-primary">
-          {searching ? 'Searching…' : 'Search Similar'}
-        </button>
+          <div className="search-filters">
+            <div className="filter-group">
+              <span className="filter-label">Precursor m/z</span>
+              <div className="filter-range">
+                <label>
+                  Min
+                  <input
+                    type="number"
+                    value={precursorMzMin}
+                    onChange={e => setPrecursorMzMin(e.target.value)}
+                    className="input-mz"
+                    placeholder="e.g. 100"
+                    step="any"
+                  />
+                </label>
+                <span className="range-dash">–</span>
+                <label>
+                  Max
+                  <input
+                    type="number"
+                    value={precursorMzMax}
+                    onChange={e => setPrecursorMzMax(e.target.value)}
+                    className="input-mz"
+                    placeholder="e.g. 500"
+                    step="any"
+                  />
+                </label>
+              </div>
+            </div>
 
-        {searchError && <p className="error">{searchError}</p>}
+            <div className="filter-group">
+              <label className="filter-label" htmlFor="formula-input">Molecular formula</label>
+              <input
+                id="formula-input"
+                type="text"
+                value={formula}
+                onChange={e => setFormula(e.target.value)}
+                className="input-wide"
+                placeholder="e.g. C8H10N4O2"
+              />
+            </div>
 
-        {searchResults && (
-          <div className="results">
-            <p><strong>Total candidates:</strong> {searchResults.hits?.total ?? '—'}</p>
-            <table>
-              <thead><tr><th>#</th><th>ID</th><th>Title</th><th>Embedding</th></tr></thead>
-              <tbody>
-                {searchResults.hits?.hits?.map((hit, idx) => (
-                  <tr key={hit.id}>
-                    <td>{idx + 1}</td>
-                    <td><code>{hit.id}</code></td>
-                    <td>{hit.metadata?.title ?? '—'}</td>
-                    <td><code>[{hit.metadata?.embedding?.join(', ') ?? '—'}]</code></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="filter-group">
+              <label className="filter-label" htmlFor="organism-input">Organism</label>
+              <input
+                id="organism-input"
+                type="text"
+                value={organism}
+                onChange={e => setOrganism(e.target.value)}
+                className="input-wide"
+                placeholder="e.g. Homo sapiens"
+              />
+            </div>
           </div>
-        )}
-      </section>
+
+          <button onClick={searchSpectra} disabled={searching} className="btn-primary search-btn">
+            {searching ? 'Searching…' : 'Search'}
+          </button>
+
+          {searchError && <p className="error">{searchError}</p>}
+
+          {searchResults && (() => {
+            const rows = (searchResults.hits?.hits ?? []).map(hit => {
+              const m = hit.metadata ?? {}
+              const msrun = searchResults.msrunMap?.[m.msrun?.id]
+              return {
+                hit,
+                scanId:      m.native_id ?? '',
+                precMz:      m.precursor_list?.[0]?.selected_ions?.[0]?.selected_ion_mz ?? null,
+                charge:      m.precursor_list?.[0]?.selected_ions?.[0]?.charge_state ?? '',
+                polarity:    m.scan_polarity?.id === 'MS:1000130' ? 'pos' : m.scan_polarity?.id === 'MS:1000129' ? 'neg' : '',
+                msLevel:     m.spectrum_cv_params?.find(p => p.accession === 'MS:1000511')?.value ?? '',
+                fragMethod:  m.precursor_list?.[0]?.activation?.dissociation_method?.title?.en
+                               ?? m.precursor_list?.[0]?.activation?.dissociation_method?.id ?? '',
+                instrument:  (() => {
+                  const ic = msrun?.metadata?.instrument_configurations?.[0]
+                  if (!ic) return ''
+                  if (ic.instrument_model?.name) return ic.instrument_model.name
+                  const analyzers = ic.analyzers?.map(a => a.mass_analyzer_type?.name).filter(Boolean)
+                  return analyzers?.length ? analyzers.join(' / ') : ''
+                })(),
+                runId:       msrun?.metadata?.run_id ?? '',
+                dataset:     msrun?.metadata?.dataset?.metadata?.title ?? '',
+                sourceId:    hit.id,
+              }
+            })
+
+            if (sortCol) {
+              rows.sort((a, b) => {
+                const av = a[sortCol] ?? ''
+                const bv = b[sortCol] ?? ''
+                const cmp = typeof av === 'number' && typeof bv === 'number'
+                  ? av - bv
+                  : String(av).localeCompare(String(bv), undefined, { numeric: true })
+                return sortDir === 'asc' ? cmp : -cmp
+              })
+            }
+
+            function SortTh({ col, children, className }) {
+              const active = sortCol === col
+              const indicator = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''
+              return (
+                <th
+                  className={`sortable${active ? ' sort-active' : ''}${className ? ' ' + className : ''}`}
+                  onClick={() => {
+                    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+                    else { setSortCol(col); setSortDir('asc') }
+                  }}
+                >{children}{indicator}</th>
+              )
+            }
+
+            return (
+              <div className="results">
+                <p className="results-count">
+                  <strong>{searchResults.hits?.total?.value ?? searchResults.hits?.total ?? 0}</strong> spectra found
+                </p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <SortTh col="scanId" className="col-name">Scan ID</SortTh>                      <SortTh col="precMz">Precursor m/z</SortTh>
+                      <SortTh col="charge">Charge</SortTh>
+                      <SortTh col="polarity">Mode</SortTh>
+                      <SortTh col="msLevel">MS level</SortTh>
+                      <SortTh col="fragMethod">Fragmentation</SortTh>
+                      <SortTh col="instrument">Instrument</SortTh>
+                      <SortTh col="runId">Run ID</SortTh>
+                      <SortTh col="dataset">Dataset</SortTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.length > 0
+                      ? rows.map((r, idx) => (
+                          <tr key={r.hit.id}>
+                            <td>{idx + 1}</td>
+                            <td className="col-name" title={r.scanId}>
+                              <button className="link-btn" onClick={() => setSpectrumPage(r.sourceId)}>
+                                {r.scanId || r.sourceId}
+                              </button>
+                            </td>
+                            <td>{r.precMz != null ? r.precMz.toFixed(4) : '—'}</td>
+                            <td>{r.charge !== '' ? r.charge : '—'}</td>
+                            <td><span className={`polarity-badge polarity-${r.polarity || '-'}`}>{r.polarity || '—'}</span></td>
+                            <td>{r.msLevel || '—'}</td>
+                            <td>{r.fragMethod || '—'}</td>
+                            <td>{r.instrument || '—'}</td>
+                            <td><code className="cv-id">{r.runId || '—'}</code></td>
+                            <td>{r.dataset || '—'}</td>
+                          </tr>
+                        ))
+                      : (
+                        <tr>
+                          <td colSpan={10} className="no-results">No spectra matched the filters.</td>
+                        </tr>
+                      )
+                    }
+                  </tbody>
+                </table>
+              </div>
+            )
+          })()}
+        </section>
+      )}
+
+      {/* ── import tab (authenticated only) ── */}
+      {activeTab === 'import' && user && (
+        <>
+          <section className="card">
+            <h2>Import mzML Folder</h2>
+            <p className="hint">
+              Select a folder of <code>.xml</code> (mzML) files. One Dataset is created, then one MSRun
+              + its Spectrum records are created per file.
+            </p>
+
+            <div className="form-field">
+              <label>Dataset title</label>
+              <input
+                type="text"
+                value={datasetTitle}
+                onChange={e => setDatasetTitle(e.target.value)}
+                className="input-wide"
+                placeholder="e.g. My LC-MS experiment 2024"
+                disabled={importing}
+              />
+            </div>
+
+            <div className="form-field">
+              <label>mzML folder</label>
+              <div className="row" style={{ marginBottom: 0 }}>
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  webkitdirectory=""
+                  directory=""
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleFolderSelect}
+                />
+                <button className="btn-secondary" onClick={() => folderInputRef.current.click()} disabled={importing}>
+                  Choose folder…
+                </button>
+                <span style={{ fontSize: '0.85rem', color: '#888', alignSelf: 'center' }}>
+                  {importFiles.length > 0
+                    ? `${importFiles.length} .xml file${importFiles.length > 1 ? 's' : ''} selected`
+                    : 'No folder selected'}
+                </span>
+              </div>
+            </div>
+
+            {importFiles.length > 0 && (
+              <ul className="file-list">
+                {importFiles.map(f => <li key={f.name}>{f.name} <span className="file-size">({(f.size / 1024).toFixed(1)} KB)</span></li>)}
+              </ul>
+            )}
+
+            <button
+              onClick={importFolder}
+              disabled={importing || importFiles.length === 0}
+              className="btn-primary"
+              style={{ marginTop: '0.8rem' }}
+            >
+              {importing ? 'Importing…' : 'Create Dataset & Import Runs'}
+            </button>
+
+            {importLog.length > 0 && <pre className="log">{importLog.join('\n')}</pre>}
+          </section>
+
+          <section className="card">
+            <h2>Create 10 Test Records</h2>
+            <p className="hint">Creates 10 spectrum records with random 2-dim embeddings and publishes them.</p>
+            <button onClick={createRecords} disabled={creating} className="btn-primary">
+              {creating ? 'Creating…' : 'Create 10 Records'}
+            </button>
+            {createLog.length > 0 && <pre className="log">{createLog.join('\n')}</pre>}
+          </section>
+
+          <section className="card">
+            <h2>Create MS Dataset Example</h2>
+            <p className="hint">
+              Creates one Dataset, one MSRun, and one Spectrum record from <code>tiny.pwiz.1.1.mzML</code> data.
+            </p>
+            <button onClick={createMSDatasetExample} disabled={creatingExample} className="btn-primary">
+              {creatingExample ? 'Creating…' : 'Create MS Dataset Example'}
+            </button>
+            {exampleLog.length > 0 && <pre className="log">{exampleLog.join('\n')}</pre>}
+          </section>
+        </>
+      )}
     </div>
   )
 }
