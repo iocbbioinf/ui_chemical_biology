@@ -293,11 +293,24 @@
 
 /* ── spectrum detail page ── */
 
+.sp-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
 .sp-title {
   margin-top: 0;
   font-size: 1.1rem;
   color: #a0a0ff;
   word-break: break-all;
+}
+
+.dataset-description {
+  color: #ccc;
+  line-height: 1.6;
+  margin-bottom: 1.25rem;
 }
 
 .sp-grid {

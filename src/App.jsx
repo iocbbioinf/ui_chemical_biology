@@ -291,11 +291,12 @@ function parseMzML(xmlText) {
 
 // ── SpectrumPage ──────────────────────────────────────────────────────────────
 
-function SpectrumPage({ spectrumId, onBack, apiFetch }) {
-  const [record,  setRecord]  = useState(null)
-  const [msrun,   setMsrun]   = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
+function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
+  const [record,          setRecord]          = useState(null)
+  const [msrun,           setMsrun]           = useState(null)
+  const [loading,         setLoading]         = useState(true)
+  const [error,           setError]           = useState('')
+  const [simSearching,    setSimSearching]     = useState(false)
 
   useState(() => {
     let cancelled = false
@@ -344,11 +345,31 @@ function SpectrumPage({ spectrumId, onBack, apiFetch }) {
     return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
   }
 
+  const embedding = record?.metadata?.dreams_embedding
+
+  async function handleSimilaritySearch() {
+    if (!embedding) return
+    setSimSearching(true)
+    await onSimilaritySearch(embedding)
+    setSimSearching(false)
+  }
+
   return (
     <div>
-      <button className="btn-secondary btn-sm" onClick={onBack} style={{ marginBottom: '1rem' }}>
-        ← Back to results
-      </button>
+      <div className="sp-actions">
+        <button className="btn-secondary btn-sm" onClick={onBack}>
+          ← Back to results
+        </button>
+        {embedding && (
+          <button
+            className="btn-primary btn-sm"
+            onClick={handleSimilaritySearch}
+            disabled={simSearching}
+          >
+            {simSearching ? 'Searching…' : 'Find Similar Spectra'}
+          </button>
+        )}
+      </div>
 
       <section className="card">
         <h2 className="sp-title">{m.native_id ?? record.id}</h2>
@@ -433,6 +454,199 @@ function SpectrumPage({ spectrumId, onBack, apiFetch }) {
   )
 }
 
+// ── DatasetPage ───────────────────────────────────────────────────────────────
+
+function DatasetPage({ datasetId, onBack, apiFetch }) {
+  const [record,  setRecord]  = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+
+  useState(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true); setError('')
+      const { ok, json } = await apiFetch(`/api/dataset/${datasetId}`)
+      if (!ok || cancelled) { setError(json?.message || 'Failed to load dataset'); setLoading(false); return }
+      if (!cancelled) { setRecord(json); setLoading(false) }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [datasetId])
+
+  if (loading) return <div className="card"><p className="hint">Loading…</p></div>
+  if (error)   return <div className="card"><p className="error">{error}</p></div>
+
+  const m = record.metadata ?? {}
+
+  function Row({ label, value }) {
+    if (value == null || value === '') return null
+    return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
+  }
+
+  const creators = m.creators?.map(c =>
+    c.person_or_org?.name ?? [c.person_or_org?.given_name, c.person_or_org?.family_name].filter(Boolean).join(' ')
+  ).filter(Boolean)
+
+  const languages = m.languages?.map(l => l.title?.en ?? l.id).filter(Boolean)
+
+  return (
+    <div>
+      <div className="sp-actions">
+        <button className="btn-secondary btn-sm" onClick={onBack}>
+          ← Back to results
+        </button>
+      </div>
+
+      <section className="card">
+        <h2 className="sp-title">{m.title ?? record.id}</h2>
+
+        {m.description && <p className="dataset-description">{m.description}</p>}
+
+        <div className="sp-grid">
+          <div>
+            <h3 className="sp-section">Dataset</h3>
+            <table className="sp-table">
+              <tbody>
+                <Row label="Title"            value={m.title} />
+                <Row label="Published"        value={m.publication_date} />
+                <Row label="Languages"        value={languages?.join(', ')} />
+              </tbody>
+            </table>
+
+            {creators?.length > 0 && <>
+              <h3 className="sp-section">Creators</h3>
+              <table className="sp-table">
+                <tbody>
+                  {creators.map((name, i) => (
+                    <tr key={i}><td>{name}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </>}
+          </div>
+
+          <div>
+            <h3 className="sp-section">Record</h3>
+            <table className="sp-table">
+              <tbody>
+                <Row label="ID"        value={record.id} />
+                <Row label="Created"   value={record.created?.slice(0, 10)} />
+                <Row label="Published" value={m.publication_date} />
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+// ── MsrunPage ─────────────────────────────────────────────────────────────────
+
+function MsrunPage({ msrunId, onBack, apiFetch }) {
+  const [record,  setRecord]  = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+
+  useState(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true); setError('')
+      const { ok, json } = await apiFetch(`/api/msrun/${msrunId}`)
+      if (!ok || cancelled) { setError(json?.message || 'Failed to load MS run'); setLoading(false); return }
+      if (!cancelled) { setRecord(json); setLoading(false) }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [msrunId])
+
+  if (loading) return <div className="card"><p className="hint">Loading…</p></div>
+  if (error)   return <div className="card"><p className="error">{error}</p></div>
+
+  const m = record.metadata ?? {}
+
+  const ic          = m.instrument_configurations?.[0]
+  const instrument  = ic?.instrument_model?.name
+    ?? ic?.analyzers?.map(a => a.mass_analyzer_type?.name).filter(Boolean).join(' / ')
+  const ionization  = ic?.sources?.[0]?.ionization_type?.name
+  const detector    = ic?.detectors?.[0]?.detector_type?.name
+
+  function Row({ label, value }) {
+    if (value == null || value === '') return null
+    return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
+  }
+
+  return (
+    <div>
+      <div className="sp-actions">
+        <button className="btn-secondary btn-sm" onClick={onBack}>
+          ← Back to results
+        </button>
+      </div>
+
+      <section className="card">
+        <h2 className="sp-title">{m.run_id ?? record.id}</h2>
+        <p className="hint">{m.title}</p>
+
+        <div className="sp-grid">
+          <div>
+            <h3 className="sp-section">Run</h3>
+            <table className="sp-table">
+              <tbody>
+                <Row label="Run ID"        value={m.run_id} />
+                <Row label="Started"       value={m.start_time_stamp} />
+                <Row label="Spectra"       value={m.spectrum_count} />
+                <Row label="Dataset"       value={m.dataset?.metadata?.title} />
+              </tbody>
+            </table>
+
+            {m.samples?.length > 0 && <>
+              <h3 className="sp-section">Samples</h3>
+              <table className="sp-table">
+                <tbody>
+                  {m.samples.map((s, i) => (
+                    <tr key={i}>
+                      <td className="sp-label">{s.name ?? s.sample_id ?? `Sample ${i + 1}`}</td>
+                      <td>{s.cv_params?.map(p => p.value || p.name).filter(Boolean).join(', ') || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>}
+          </div>
+
+          <div>
+            {ic && <>
+              <h3 className="sp-section">Instrument</h3>
+              <table className="sp-table">
+                <tbody>
+                  <Row label="Model"       value={instrument} />
+                  <Row label="Ionization"  value={ionization} />
+                  <Row label="Detector"    value={detector} />
+                  {ic.analyzers?.map((a, i) => (
+                    a.mass_analyzer_type?.name
+                      ? <Row key={i} label={`Analyzer ${ic.analyzers.length > 1 ? i + 1 : ''}`} value={a.mass_analyzer_type.name} />
+                      : null
+                  ))}
+                </tbody>
+              </table>
+            </>}
+
+            <h3 className="sp-section">Record</h3>
+            <table className="sp-table">
+              <tbody>
+                <Row label="ID"        value={record.id} />
+                <Row label="Created"   value={record.created?.slice(0, 10)} />
+                <Row label="Published" value={m.publication_date} />
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function today() {
@@ -486,6 +700,8 @@ function App() {
   const [sortCol, setSortCol]               = useState(null)
   const [sortDir, setSortDir]               = useState('asc')
   const [spectrumPage, setSpectrumPage]     = useState(null)
+  const [msrunPage, setMsrunPage]           = useState(null)
+  const [datasetPage, setDatasetPage]       = useState(null)
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -667,6 +883,21 @@ function App() {
       const { msrun: msrunMeta, spectra } = parsed
       log(`  Parsed: ${spectra.length} spectra, ${msrunMeta.chromatogram_list?.length ?? 0} chromatograms`)
 
+      // ── DreaMS embeddings ─────────────────────────────────────────────────
+      log(`  Computing DreaMS embeddings…`)
+      let embeddingsByScan = {}
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        const res = await fetch('/dreams/embeddings', { method: 'POST', body: formData })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+        embeddingsByScan = json.by_scan ?? {}
+        log(`  Embeddings: ${Object.keys(embeddingsByScan).length} MS2 spectra embedded`)
+      } catch (err) {
+        log(`  ⚠ DreaMS unavailable (${err.message}), skipping embeddings`)
+      }
+
       log(`  Creating MSRun…`)
       const msrunTitle = `${datasetTitle} – ${file.name}`
       const msrunId = await createAndPublish('/api/msrun', {
@@ -678,12 +909,16 @@ function App() {
       log(`  Creating ${spectra.length} spectrum records…`)
       let ok = 0, fail = 0
       for (const sp of spectra) {
+        // extract scan number from native_id (e.g. "scan=19" → "19")
+        const scanMatch = sp.native_id?.match(/scan=(\d+)/)
+        const embedding = scanMatch ? embeddingsByScan[scanMatch[1]] : undefined
+
         const spId = await createAndPublish('/api/spectrum', {
           metadata: {
             ...rdmBase(),
             title: `${file.name} – ${sp.native_id}`,
-            embedding: Array.from({ length: 300 }, () => parseFloat((Math.random() * 2 - 1).toFixed(6))),
-            dataset: { id: dsId},
+            ...(embedding ? { embedding } : {}),
+            dataset: { id: dsId },
             msrun: { id: msrunId },
             ...sp,
           },
@@ -743,6 +978,29 @@ function App() {
 
     setSearchResults({ ...json, msrunMap })
     setSearching(false)
+  }
+
+  // ── similarity search ─────────────────────────────────────────────────────
+
+  async function searchSimilar(vector) {
+    setSearchError('')
+    const { ok, json } = await apiFetch('/api/spectrum/records/search-similar', {
+      method: 'POST',
+      body: JSON.stringify({ vector, k: 10 }),
+    })
+    if (!ok) { setSearchError(json?.message || 'Similarity search failed'); return }
+
+    const msrunIds = [...new Set(
+      (json.hits?.hits ?? []).map(h => h.metadata?.msrun?.id).filter(Boolean)
+    )]
+    const msrunMap = {}
+    await Promise.all(msrunIds.map(async id => {
+      const { ok: mok, json: mj } = await apiFetch(`/api/msrun/${id}`)
+      if (mok) msrunMap[id] = mj
+    }))
+
+    setSearchResults({ ...json, msrunMap })
+    setSpectrumPage(null)
   }
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -818,10 +1076,25 @@ function App() {
         <SpectrumPage
           spectrumId={spectrumPage}
           onBack={() => setSpectrumPage(null)}
+          onSimilaritySearch={searchSimilar}
           apiFetch={apiFetch}
         />
       )}
-      {activeTab === 'search' && !spectrumPage && (
+      {activeTab === 'search' && !spectrumPage && msrunPage && (
+        <MsrunPage
+          msrunId={msrunPage}
+          onBack={() => setMsrunPage(null)}
+          apiFetch={apiFetch}
+        />
+      )}
+      {activeTab === 'search' && !spectrumPage && !msrunPage && datasetPage && (
+        <DatasetPage
+          datasetId={datasetPage}
+          onBack={() => setDatasetPage(null)}
+          apiFetch={apiFetch}
+        />
+      )}
+      {activeTab === 'search' && !spectrumPage && !msrunPage && !datasetPage && (
         <section className="card">
           <h2>Search Spectra</h2>
 
@@ -906,9 +1179,11 @@ function App() {
                   const analyzers = ic.analyzers?.map(a => a.mass_analyzer_type?.name).filter(Boolean)
                   return analyzers?.length ? analyzers.join(' / ') : ''
                 })(),
-                runId:       msrun?.metadata?.run_id ?? '',
-                dataset:     msrun?.metadata?.dataset?.metadata?.title ?? '',
-                sourceId:    hit.id,
+                runId:          msrun?.metadata?.run_id ?? '',
+                msrunRecordId:  m.msrun?.id ?? null,
+                dataset:        msrun?.metadata?.dataset?.metadata?.title ?? '',
+                datasetRecordId: msrun?.metadata?.dataset?.id ?? null,
+                sourceId:       hit.id,
               }
             })
 
@@ -972,8 +1247,22 @@ function App() {
                             <td>{r.msLevel || '—'}</td>
                             <td>{r.fragMethod || '—'}</td>
                             <td>{r.instrument || '—'}</td>
-                            <td><code className="cv-id">{r.runId || '—'}</code></td>
-                            <td>{r.dataset || '—'}</td>
+                            <td>
+                              {r.msrunRecordId
+                                ? <button className="link-btn" onClick={() => setMsrunPage(r.msrunRecordId)}>
+                                    <code className="cv-id">{r.runId || r.msrunRecordId}</code>
+                                  </button>
+                                : <code className="cv-id">{r.runId || '—'}</code>
+                              }
+                            </td>
+                            <td>
+                              {r.datasetRecordId
+                                ? <button className="link-btn" onClick={() => setDatasetPage(r.datasetRecordId)}>
+                                    {r.dataset || r.datasetRecordId}
+                                  </button>
+                                : (r.dataset || '—')
+                              }
+                            </td>
                           </tr>
                         ))
                       : (
