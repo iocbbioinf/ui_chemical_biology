@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import './App.css'
 
 // ── mzML XML → JSON transformer ───────────────────────────────────────────────
@@ -699,9 +699,11 @@ function App() {
   const [searchError, setSearchError]       = useState('')
   const [sortCol, setSortCol]               = useState(null)
   const [sortDir, setSortDir]               = useState('asc')
+  const [spectraPage, setSpectraPage]       = useState(0)
   const [spectrumPage, setSpectrumPage]     = useState(null)
   const [msrunPage, setMsrunPage]           = useState(null)
   const [datasetPage, setDatasetPage]       = useState(null)
+
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -913,11 +915,15 @@ function App() {
         const scanMatch = sp.native_id?.match(/scan=(\d+)/)
         const embedding = scanMatch ? embeddingsByScan[scanMatch[1]] : undefined
 
+        if(embedding) {
+          log("MMO-1")
+        }
+
         const spId = await createAndPublish('/api/spectrum', {
           metadata: {
             ...rdmBase(),
             title: `${file.name} – ${sp.native_id}`,
-            ...(embedding ? { embedding } : {}),
+            ...(embedding ? { dreams_embedding: embedding } : {}),
             dataset: { id: dsId },
             msrun: { id: msrunId },
             ...sp,
@@ -935,8 +941,18 @@ function App() {
 
   // ── spectra search ────────────────────────────────────────────────────────
 
-  async function searchSpectra() {
-    setSearching(true); setSearchResults(null); setSearchError('')
+  const SPECTRA_PAGE_SIZE = 20
+
+  // Maps frontend sort column + direction to Invenio sort option name
+  const SORT_OPTIONS = {
+    scanId:    { asc: 'native_id',    desc: 'native_id_desc' },
+    precMz:    { asc: 'precmz',       desc: 'precmz_desc' },
+    charge:    { asc: 'charge',       desc: 'charge_desc' },
+  }
+
+  async function searchSpectra(page = 0, overrideSort) {
+    setSearching(true); setSearchError('')
+    if (page === 0) setSearchResults(null)
 
     const minMz = parseFloat(precursorMzMin)
     const maxMz = parseFloat(precursorMzMax)
@@ -959,23 +975,26 @@ function App() {
       clauses.push(`metadata.msrun.metadata.samples.cv_params.value:"${organism.trim()}"`)
 
     const q = clauses.length > 0 ? clauses.join(' AND ') : '*'
-    const url = `/api/spectrum?q=${encodeURIComponent(q)}&size=50`
+    const params = new URLSearchParams({ q, size: SPECTRA_PAGE_SIZE, page: page + 1 })
+    const effectiveCol = overrideSort?.col ?? sortCol
+    const effectiveDir = overrideSort?.dir ?? sortDir
+    const sortOption = effectiveCol && SORT_OPTIONS[effectiveCol]?.[effectiveDir]
+    if (sortOption) params.set('sort', sortOption)
+    const url = `/api/spectrum?${params}`
 
     const { ok, json } = await apiFetch(url)
     if (!ok) { setSearchError(json.message || `Search failed (${json.status ?? 'unknown'})`); setSearching(false); return }
 
-    // collect unique msrun IDs from hits
     const msrunIds = [...new Set(
       (json.hits?.hits ?? []).map(h => h.metadata?.msrun?.id).filter(Boolean)
     )]
-
-    // fetch all msrun records in parallel
     const msrunMap = {}
     await Promise.all(msrunIds.map(async id => {
       const { ok: mok, json: mj } = await apiFetch(`/api/msrun/${id}`)
       if (mok) msrunMap[id] = mj
     }))
 
+    setSpectraPage(page)
     setSearchResults({ ...json, msrunMap })
     setSearching(false)
   }
@@ -1153,7 +1172,7 @@ function App() {
             </div>
           </div>
 
-          <button onClick={searchSpectra} disabled={searching} className="btn-primary search-btn">
+          <button onClick={() => searchSpectra(0)} disabled={searching} className="btn-primary search-btn">
             {searching ? 'Searching…' : 'Search'}
           </button>
 
@@ -1187,26 +1206,21 @@ function App() {
               }
             })
 
-            if (sortCol) {
-              rows.sort((a, b) => {
-                const av = a[sortCol] ?? ''
-                const bv = b[sortCol] ?? ''
-                const cmp = typeof av === 'number' && typeof bv === 'number'
-                  ? av - bv
-                  : String(av).localeCompare(String(bv), undefined, { numeric: true })
-                return sortDir === 'asc' ? cmp : -cmp
-              })
-            }
+            const total = searchResults.hits?.total?.value ?? searchResults.hits?.total ?? 0
+            const totalPages = Math.ceil(total / SPECTRA_PAGE_SIZE)
 
             function SortTh({ col, children, className }) {
               const active = sortCol === col
+              const sortable = col in SORT_OPTIONS
               const indicator = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''
+              if (!sortable) return <th className={className ?? ''}>{children}</th>
               return (
                 <th
                   className={`sortable${active ? ' sort-active' : ''}${className ? ' ' + className : ''}`}
                   onClick={() => {
-                    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-                    else { setSortCol(col); setSortDir('asc') }
+                    const newDir = sortCol === col && sortDir === 'asc' ? 'desc' : 'asc'
+                    setSortCol(col); setSortDir(newDir)
+                    searchSpectra(0, { col, dir: newDir })
                   }}
                 >{children}{indicator}</th>
               )
@@ -1215,13 +1229,14 @@ function App() {
             return (
               <div className="results">
                 <p className="results-count">
-                  <strong>{searchResults.hits?.total?.value ?? searchResults.hits?.total ?? 0}</strong> spectra found
+                  <strong>{total}</strong> spectra found
                 </p>
                 <table>
                   <thead>
                     <tr>
                       <th>#</th>
-                      <SortTh col="scanId" className="col-name">Scan ID</SortTh>                      <SortTh col="precMz">Precursor m/z</SortTh>
+                      <SortTh col="scanId" className="col-name">Scan ID</SortTh>
+                      <SortTh col="precMz">Precursor m/z</SortTh>
                       <SortTh col="charge">Charge</SortTh>
                       <SortTh col="polarity">Mode</SortTh>
                       <SortTh col="msLevel">MS level</SortTh>
@@ -1235,10 +1250,10 @@ function App() {
                     {rows.length > 0
                       ? rows.map((r, idx) => (
                           <tr key={r.hit.id}>
-                            <td>{idx + 1}</td>
+                            <td>{spectraPage * SPECTRA_PAGE_SIZE + idx + 1}</td>
                             <td className="col-name" title={r.scanId}>
                               <button className="link-btn" onClick={() => setSpectrumPage(r.sourceId)}>
-                                {r.scanId || r.sourceId}
+                                {(r.scanId?.match(/scan=(\d+)/)?.[1] ?? r.scanId) || r.sourceId}
                               </button>
                             </td>
                             <td>{r.precMz != null ? r.precMz.toFixed(4) : '—'}</td>
@@ -1273,6 +1288,15 @@ function App() {
                     }
                   </tbody>
                 </table>
+                {totalPages > 1 && (
+                  <div className="pagination">
+                    <button className="btn-secondary" onClick={() => searchSpectra(0)} disabled={spectraPage === 0 || searching}>«</button>
+                    <button className="btn-secondary" onClick={() => searchSpectra(spectraPage - 1)} disabled={spectraPage === 0 || searching}>‹</button>
+                    <span>Page {spectraPage + 1} of {totalPages}</span>
+                    <button className="btn-secondary" onClick={() => searchSpectra(spectraPage + 1)} disabled={spectraPage >= totalPages - 1 || searching}>›</button>
+                    <button className="btn-secondary" onClick={() => searchSpectra(totalPages - 1)} disabled={spectraPage >= totalPages - 1 || searching}>»</button>
+                  </div>
+                )}
               </div>
             )
           })()}
