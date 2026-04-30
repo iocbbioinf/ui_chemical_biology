@@ -352,6 +352,110 @@
   white-space: nowrap;
 }
 
+/* ── search actions ── */
+
+.search-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+
+/* ── mzML file row ── */
+
+.mz-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.mz-file-name {
+  font-size: 0.85rem;
+  color: #aaa;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── mzML results table ── */
+
+.mz-results-table-wrap {
+  overflow-x: auto;
+}
+
+.mz-results-table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  min-width: 900px;
+}
+
+.mz-col-group {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.35em 0.6em;
+  border-bottom: 2px solid #444;
+}
+
+.mz-col-group-local {
+  background: #1e1e35;
+  color: #aaaaff;
+  border-right: 2px solid #444;
+}
+
+.mz-col-group-repo {
+  background: #1a2a1a;
+  color: #88bb88;
+}
+
+.mz-results-table th,
+.mz-results-table td {
+  padding: 0.3em 0.6em;
+  border-bottom: 1px solid #2a2a2a;
+  white-space: nowrap;
+}
+
+.mz-results-table thead tr:last-child th {
+  font-size: 0.8rem;
+  color: #aaa;
+  font-weight: 600;
+}
+
+.mz-local-cell {
+  background: #1e1e35;
+  color: #dde;
+  border-right: none;
+}
+
+.mz-seq {
+  color: #666;
+}
+
+.mz-row-best td {
+  border-top: 1px solid #333;
+}
+
+.mz-row-best .mz-rank-cell {
+  color: #f0a030;
+  font-weight: 700;
+}
+
+.mz-row-alt .mz-rank-cell {
+  color: #888;
+}
+
+.mz-row-alt td:not(.mz-local-cell) {
+  opacity: 0.75;
+}
+
 /* ── spectrum graph ── */
 
 .spectrum-graph {

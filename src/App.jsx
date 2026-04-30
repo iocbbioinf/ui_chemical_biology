@@ -464,37 +464,15 @@ function SpectrumGraph({ binaryDataArrayList }) {
   )
 }
 
-// ── SpectrumPage ──────────────────────────────────────────────────────────────
+// ── SpectrumDetail ────────────────────────────────────────────────────────────
+// Pure rendering component. Accepts a pre-loaded metadata object `m` (the
+// spectrum metadata), an optional `msrunMeta` object (the msrun metadata fields),
+// an optional repo `recordId` / `recordCreated` for the Record section,
+// and action callbacks.
 
-function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
-  const [record,          setRecord]          = useState(null)
-  const [msrun,           setMsrun]           = useState(null)
-  const [loading,         setLoading]         = useState(true)
-  const [error,           setError]           = useState('')
-  const [simSearching,    setSimSearching]     = useState(false)
+function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimilaritySearch }) {
+  const [simSearching, setSimSearching] = useState(false)
 
-  useState(() => {
-    let cancelled = false
-    async function load() {
-      setLoading(true); setError('')
-      const { ok, json } = await apiFetch(`/api/spectrum/${spectrumId}`)
-      if (!ok || cancelled) { setError(json?.message || 'Failed to load spectrum'); setLoading(false); return }
-      setRecord(json)
-      const msrunId = json.metadata?.msrun?.id
-      if (msrunId) {
-        const { ok: mok, json: mj } = await apiFetch(`/api/msrun/${msrunId}`)
-        if (!cancelled && mok) setMsrun(mj)
-      }
-      if (!cancelled) setLoading(false)
-    }
-    load()
-    return () => { cancelled = true }
-  }, [spectrumId])
-
-  if (loading) return <div className="card"><p className="hint">Loading…</p></div>
-  if (error)   return <div className="card"><p className="error">{error}</p></div>
-
-  const m = record.metadata ?? {}
   const cvVal = (params, acc) => params?.find(p => p.accession === acc)?.value
 
   const retentionTime = cvVal(m.scan_list?.scans?.[0]?.cv_params, 'MS:1000016')
@@ -510,20 +488,20 @@ function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
   const selIon       = pre?.selected_ions?.[0]
   const dissociation = pre?.activation?.dissociation_method?.title?.en ?? pre?.activation?.dissociation_method?.id
 
-  const ic           = msrun?.metadata?.instrument_configurations?.[0]
-  const instrument   = ic?.instrument_model?.name
+  const ic         = msrunMeta?.instrument_configurations?.[0]
+  const instrument = ic?.instrument_model?.name
     ?? ic?.analyzers?.map(a => a.mass_analyzer_type?.name).filter(Boolean).join(' / ')
-  const ionization   = ic?.sources?.[0]?.ionization_type?.name
+  const ionization = ic?.sources?.[0]?.ionization_type?.name
+
+  const embedding = m.dreams_embedding
 
   function Row({ label, value }) {
     if (value == null || value === '') return null
     return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
   }
 
-  const embedding = record?.metadata?.dreams_embedding
-
   async function handleSimilaritySearch() {
-    if (!embedding) return
+    if (!embedding || !onSimilaritySearch) return
     setSimSearching(true)
     await onSimilaritySearch(embedding)
     setSimSearching(false)
@@ -535,7 +513,7 @@ function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
         <button className="btn-secondary btn-sm" onClick={onBack}>
           ← Back to results
         </button>
-        {embedding && (
+        {embedding && onSimilaritySearch && (
           <button
             className="btn-primary btn-sm"
             onClick={handleSimilaritySearch}
@@ -547,7 +525,7 @@ function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
       </div>
 
       <section className="card">
-        <h2 className="sp-title">{m.native_id ?? record.id}</h2>
+        <h2 className="sp-title">{m.native_id ?? recordId}</h2>
         <p className="hint">{m.title}</p>
 
         {m.binary_data_array_list?.length > 0 && (
@@ -593,24 +571,24 @@ function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
           </div>
 
           <div>
-            {msrun && <>
+            {msrunMeta && <>
               <h3 className="sp-section">MS Run</h3>
               <table className="sp-table">
                 <tbody>
-                  <Row label="Run ID"     value={msrun.metadata?.run_id} />
-                  <Row label="Dataset"    value={msrun.metadata?.dataset?.metadata?.title} />
+                  <Row label="Run ID"     value={msrunMeta.run_id} />
+                  <Row label="Dataset"    value={msrunMeta.dataset?.metadata?.title} />
                   <Row label="Instrument" value={instrument} />
                   <Row label="Ionization" value={ionization} />
-                  <Row label="Started"    value={msrun.metadata?.start_time_stamp} />
-                  <Row label="Spectra"    value={msrun.metadata?.spectrum_count} />
+                  <Row label="Started"    value={msrunMeta.start_time_stamp} />
+                  <Row label="Spectra"    value={msrunMeta.spectrum_count} />
                 </tbody>
               </table>
 
-              {msrun.metadata?.samples?.length > 0 && <>
+              {msrunMeta.samples?.length > 0 && <>
                 <h3 className="sp-section">Samples</h3>
                 <table className="sp-table">
                   <tbody>
-                    {msrun.metadata.samples.map((s, i) => (
+                    {msrunMeta.samples.map((s, i) => (
                       <tr key={i}>
                         <td className="sp-label">{s.name ?? s.sample_id}</td>
                         <td>{s.cv_params?.map(p => p.value || p.name).filter(Boolean).join(', ') || '—'}</td>
@@ -621,18 +599,63 @@ function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
               </>}
             </>}
 
-            <h3 className="sp-section">Record</h3>
-            <table className="sp-table">
-              <tbody>
-                <Row label="ID"        value={record.id} />
-                <Row label="Created"   value={record.created?.slice(0, 10)} />
-                <Row label="Published" value={m.publication_date} />
-              </tbody>
-            </table>
+            {recordId && (
+              <>
+                <h3 className="sp-section">Record</h3>
+                <table className="sp-table">
+                  <tbody>
+                    <Row label="ID"        value={recordId} />
+                    <Row label="Created"   value={recordCreated?.slice(0, 10)} />
+                    <Row label="Published" value={m.publication_date} />
+                  </tbody>
+                </table>
+              </>
+            )}
           </div>
         </div>
       </section>
     </div>
+  )
+}
+
+// ── SpectrumPage ──────────────────────────────────────────────────────────────
+
+function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
+  const [record,  setRecord]  = useState(null)
+  const [msrun,   setMsrun]   = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+
+  useState(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true); setError('')
+      const { ok, json } = await apiFetch(`/api/spectrum/${spectrumId}`)
+      if (!ok || cancelled) { setError(json?.message || 'Failed to load spectrum'); setLoading(false); return }
+      setRecord(json)
+      const msrunId = json.metadata?.msrun?.id
+      if (msrunId) {
+        const { ok: mok, json: mj } = await apiFetch(`/api/msrun/${msrunId}`)
+        if (!cancelled && mok) setMsrun(mj)
+      }
+      if (!cancelled) setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [spectrumId])
+
+  if (loading) return <div className="card"><p className="hint">Loading…</p></div>
+  if (error)   return <div className="card"><p className="error">{error}</p></div>
+
+  return (
+    <SpectrumDetail
+      m={record.metadata ?? {}}
+      msrunMeta={msrun?.metadata}
+      recordId={record.id}
+      recordCreated={record.created}
+      onBack={onBack}
+      onSimilaritySearch={onSimilaritySearch}
+    />
   )
 }
 
@@ -892,6 +915,7 @@ function App() {
   const [mzSearchError, setMzSearchError]     = useState('')
   const [mzSearchProgress, setMzSearchProgress] = useState('')
   const [mzSearchResults, setMzSearchResults] = useState(null)
+  const [localSpectrumPage, setLocalSpectrumPage] = useState(null)
   const mzFileInputRef                        = useRef(null)
 
 
@@ -1212,6 +1236,125 @@ function App() {
     setSpectrumPage(null)
   }
 
+  // ── mzML file similarity search ───────────────────────────────────────────
+
+  function buildFilterQuery() {
+    const clauses = []
+    const minMz = parseFloat(precursorMzMin)
+    const maxMz = parseFloat(precursorMzMax)
+    if (precursorMzMin !== '' || precursorMzMax !== '') {
+      const lo = precursorMzMin !== '' && !isNaN(minMz) ? minMz : '*'
+      const hi = precursorMzMax !== '' && !isNaN(maxMz) ? maxMz : '*'
+      clauses.push(`metadata.precursor_list.selected_ions.selected_ion_mz:[${lo} TO ${hi}]`)
+    }
+    if (formula.trim() !== '')
+      clauses.push(`metadata.spectrum_cv_params.value:"${formula.trim()}"`)
+    if (organism.trim() !== '')
+      clauses.push(`metadata.msrun.metadata.samples.cv_params.value:"${organism.trim()}"`)
+    return clauses.length > 0 ? clauses.join(' AND ') : '*'
+  }
+
+  async function runMzFileSearch() {
+    if (!mzFile) { setMzSearchError('Please select an mzML file.'); return }
+    setMzSearching(true)
+    setMzSearchError('')
+    setMzSearchResults(null)
+    setMzSearchProgress('Parsing mzML…')
+
+    // 1. Parse
+    let localSpectra, mzMsrun
+    try {
+      const xml = await mzFile.text()
+      const parsed = parseMzML(xml)
+      localSpectra = parsed.spectra
+      mzMsrun = parsed.msrun
+    } catch (err) {
+      setMzSearchError(`Parse error: ${err.message}`)
+      setMzSearching(false); setMzSearchProgress(''); return
+    }
+    setMzSearchProgress(`Parsed ${localSpectra.length} spectra. Computing DreaMS embeddings…`)
+
+    // 2. Compute embeddings via DreaMS
+    let embeddingsByScan = {}
+    try {
+      const fd = new FormData()
+      fd.append('file', mzFile)
+      const res = await fetch('/dreams/embeddings', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      embeddingsByScan = json.by_scan ?? {}
+    } catch (err) {
+      setMzSearchError(`DreaMS embedding failed: ${err.message}`)
+      setMzSearching(false); setMzSearchProgress(''); return
+    }
+
+    // Attach embeddings to local spectra
+    const spectraWithEmb = localSpectra.map(sp => {
+      const scanMatch = sp.native_id?.match(/scan=(\d+)/)
+      const embedding = scanMatch ? embeddingsByScan[scanMatch[1]] : undefined
+      return { ...sp, embedding }
+    }).filter(sp => sp.embedding)
+
+    if (spectraWithEmb.length === 0) {
+      setMzSearchError('No MS2 spectra with embeddings found in the file.')
+      setMzSearching(false); setMzSearchProgress(''); return
+    }
+
+    setMzSearchProgress(`${spectraWithEmb.length} spectra embedded. Running similarity search…`)
+
+    // 3. Build filter query for the repo
+    const q = buildFilterQuery()
+
+    // 4. For each local spectrum run similarity search scoped to the filter
+    const rows = []
+    for (let i = 0; i < spectraWithEmb.length; i++) {
+      const sp = spectraWithEmb[i]
+      setMzSearchProgress(`Searching ${i + 1} / ${spectraWithEmb.length}…`)
+
+      const simParams = new URLSearchParams({ q })
+      const { ok, json } = await apiFetch(`/api/spectrum/records/search-similar?${simParams}`, {
+        method: 'POST',
+        body: JSON.stringify({ vector: sp.embedding, k: 5 }),
+      })
+      if (!ok) continue
+
+      const hits = json.hits?.hits ?? []
+      if (hits.length === 0) continue
+
+      const cvVal = (params, acc) => params?.find(p => p.accession === acc)?.value
+      const localMeta = {
+        scanId:   sp.native_id ?? '',
+        precMz:   sp.precursor_list?.[0]?.selected_ions?.[0]?.selected_ion_mz ?? null,
+        charge:   sp.precursor_list?.[0]?.selected_ions?.[0]?.charge_state ?? '',
+        polarity: sp.scan_polarity?.id === 'MS:1000130' ? 'pos'
+                : sp.scan_polarity?.id === 'MS:1000129' ? 'neg' : '',
+        msLevel:  cvVal(sp.spectrum_cv_params, 'MS:1000511') ?? '',
+        rt:       cvVal(sp.scan_list?.scans?.[0]?.cv_params, 'MS:1000016') ?? '',
+        peaks:    sp.default_array_length ?? '',
+      }
+      rows.push({ local: localMeta, localSpec: sp, mzMsrun, matches: hits })
+    }
+
+    // 5. Sort rows: best similarity first (rank 0 = top repo hit)
+    // Hits already come sorted by score from OpenSearch; rows are sorted by
+    // how many matches they got (most matches = highest confidence).
+    rows.sort((a, b) => b.matches.length - a.matches.length)
+
+    // Collect all msrun IDs from all matches to fetch metadata in one pass
+    const msrunIds = [...new Set(
+      rows.flatMap(r => r.matches.map(h => h.metadata?.msrun?.id).filter(Boolean))
+    )]
+    const msrunMap = {}
+    await Promise.all(msrunIds.map(async id => {
+      const { ok: mok, json: mj } = await apiFetch(`/api/msrun/${id}`)
+      if (mok) msrunMap[id] = mj
+    }))
+
+    setMzSearchResults({ rows, msrunMap })
+    setMzSearchProgress('')
+    setMzSearching(false)
+  }
+
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
@@ -1281,7 +1424,14 @@ function App() {
       </div>
 
       {/* ── search tab ── */}
-      {activeTab === 'search' && spectrumPage && (
+      {activeTab === 'search' && localSpectrumPage && (
+        <SpectrumDetail
+          m={localSpectrumPage.spec}
+          msrunMeta={localSpectrumPage.msrun}
+          onBack={() => setLocalSpectrumPage(null)}
+        />
+      )}
+      {activeTab === 'search' && !localSpectrumPage && spectrumPage && (
         <SpectrumPage
           spectrumId={spectrumPage}
           onBack={() => setSpectrumPage(null)}
@@ -1289,21 +1439,21 @@ function App() {
           apiFetch={apiFetch}
         />
       )}
-      {activeTab === 'search' && !spectrumPage && msrunPage && (
+      {activeTab === 'search' && !localSpectrumPage && !spectrumPage && msrunPage && (
         <MsrunPage
           msrunId={msrunPage}
           onBack={() => setMsrunPage(null)}
           apiFetch={apiFetch}
         />
       )}
-      {activeTab === 'search' && !spectrumPage && !msrunPage && datasetPage && (
+      {activeTab === 'search' && !localSpectrumPage && !spectrumPage && !msrunPage && datasetPage && (
         <DatasetPage
           datasetId={datasetPage}
           onBack={() => setDatasetPage(null)}
           apiFetch={apiFetch}
         />
       )}
-      {activeTab === 'search' && !spectrumPage && !msrunPage && !datasetPage && (
+      {activeTab === 'search' && !localSpectrumPage && !spectrumPage && !msrunPage && !datasetPage && (
         <section className="card">
           <h2>Search Spectra</h2>
 
@@ -1360,13 +1510,43 @@ function App() {
                 placeholder="e.g. Homo sapiens"
               />
             </div>
+
+            <div className="filter-group">
+              <label className="filter-label">mzML file (similarity search)</label>
+              <div className="mz-file-row">
+                <input
+                  ref={mzFileInputRef}
+                  type="file"
+                  accept=".mzml,.xml"
+                  style={{ display: 'none' }}
+                  onChange={e => { setMzFile(e.target.files?.[0] ?? null); setMzSearchResults(null); setMzSearchError('') }}
+                />
+                <button className="btn-secondary btn-sm" onClick={() => mzFileInputRef.current.click()} disabled={mzSearching}>
+                  Choose file…
+                </button>
+                <span className="mz-file-name">{mzFile ? mzFile.name : 'No file selected'}</span>
+                {mzFile && (
+                  <button className="btn-secondary btn-sm" onClick={() => { setMzFile(null); setMzSearchResults(null); setMzSearchError(''); mzFileInputRef.current.value = '' }} disabled={mzSearching}>
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
-          <button onClick={() => searchSpectra(0)} disabled={searching} className="btn-primary search-btn">
-            {searching ? 'Searching…' : 'Search'}
-          </button>
+          <div className="search-actions">
+            <button onClick={() => searchSpectra(0)} disabled={searching} className="btn-primary search-btn">
+              {searching ? 'Searching…' : 'Search Repo'}
+            </button>
+            {mzFile && (
+              <button onClick={runMzFileSearch} disabled={mzSearching || searching} className="btn-primary search-btn">
+                {mzSearching ? (mzSearchProgress || 'Searching…') : 'Search by mzML File'}
+              </button>
+            )}
+          </div>
 
           {searchError && <p className="error">{searchError}</p>}
+          {mzSearchError && <p className="error">{mzSearchError}</p>}
 
           {searchResults && (() => {
             const rows = (searchResults.hits?.hits ?? []).map(hit => {
@@ -1487,6 +1667,98 @@ function App() {
                     <button className="btn-secondary" onClick={() => searchSpectra(totalPages - 1)} disabled={spectraPage >= totalPages - 1 || searching}>»</button>
                   </div>
                 )}
+              </div>
+            )
+          })()}
+
+          {mzSearchResults && (() => {
+            const { rows, msrunMap } = mzSearchResults
+            if (rows.length === 0) return (
+              <p className="hint" style={{ marginTop: '1rem' }}>No matches found for any spectrum in the file.</p>
+            )
+            return (
+              <div className="results mz-results" style={{ marginTop: '1.5rem' }}>
+                <p className="results-count">
+                  <strong>{rows.length}</strong> spectra matched (sorted by best similarity)
+                </p>
+                <div className="mz-results-table-wrap">
+                  <table className="mz-results-table">
+                    <thead>
+                      <tr>
+                        <th colSpan={6} className="mz-col-group mz-col-group-local">Local mzML spectrum</th>
+                        <th colSpan={5} className="mz-col-group mz-col-group-repo">Best match in repository</th>
+                      </tr>
+                      <tr>
+                        <th>#</th>
+                        <th>Scan ID</th>
+                        <th>Prec. m/z</th>
+                        <th>Charge</th>
+                        <th>Mode</th>
+                        <th>RT (min)</th>
+                        <th>Rank</th>
+                        <th>Scan ID</th>
+                        <th>Prec. m/z</th>
+                        <th>Dataset</th>
+                        <th>Run ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, rowIdx) => {
+                        const { local, localSpec, mzMsrun: rowMzMsrun, matches } = row
+                        return matches.map((hit, hitIdx) => {
+                          const m = hit.metadata ?? {}
+                          const msrun = msrunMap?.[m.msrun?.id]
+                          const repoScanId = m.native_id ?? hit.id
+                          const repoPrecMz = m.precursor_list?.[0]?.selected_ions?.[0]?.selected_ion_mz
+                          const repoDataset = msrun?.metadata?.dataset?.metadata?.title ?? msrun?.metadata?.dataset?.id ?? ''
+                          const repoRunId = msrun?.metadata?.run_id ?? ''
+                          const msrunRecordId = m.msrun?.id ?? null
+                          const datasetRecordId = msrun?.metadata?.dataset?.id ?? null
+
+                          return (
+                            <tr key={`${rowIdx}-${hitIdx}`} className={hitIdx === 0 ? 'mz-row-best' : 'mz-row-alt'}>
+                              {hitIdx === 0 && <>
+                                <td rowSpan={matches.length} className="mz-local-cell mz-seq">{rowIdx + 1}</td>
+                                <td rowSpan={matches.length} className="mz-local-cell col-name" title={local.scanId}>
+                                  <button className="link-btn" onClick={() => setLocalSpectrumPage({ spec: localSpec, msrun: rowMzMsrun })}>
+                                    {local.scanId?.match(/scan=(\d+)/)?.[1] ?? local.scanId}
+                                  </button>
+                                </td>
+                                <td rowSpan={matches.length} className="mz-local-cell">
+                                  {local.precMz != null ? local.precMz.toFixed(4) : '—'}
+                                </td>
+                                <td rowSpan={matches.length} className="mz-local-cell">{local.charge || '—'}</td>
+                                <td rowSpan={matches.length} className="mz-local-cell">
+                                  <span className={`polarity-badge polarity-${local.polarity || '-'}`}>{local.polarity || '—'}</span>
+                                </td>
+                                <td rowSpan={matches.length} className="mz-local-cell">
+                                  {local.rt ? parseFloat(local.rt).toFixed(3) : '—'}
+                                </td>
+                              </>}
+                              <td className="mz-rank-cell">{hitIdx + 1}</td>
+                              <td>
+                                <button className="link-btn" onClick={() => setSpectrumPage(hit.id)}>
+                                  {repoScanId?.match(/scan=(\d+)/)?.[1] ?? repoScanId}
+                                </button>
+                              </td>
+                              <td>{repoPrecMz != null ? repoPrecMz.toFixed(4) : '—'}</td>
+                              <td>
+                                {datasetRecordId
+                                  ? <button className="link-btn" onClick={() => setDatasetPage(datasetRecordId)}>{repoDataset || datasetRecordId}</button>
+                                  : (repoDataset || '—')}
+                              </td>
+                              <td>
+                                {msrunRecordId
+                                  ? <button className="link-btn" onClick={() => setMsrunPage(msrunRecordId)}><code className="cv-id">{repoRunId || msrunRecordId}</code></button>
+                                  : <code className="cv-id">{repoRunId || '—'}</code>}
+                              </td>
+                            </tr>
+                          )
+                        })
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )
           })()}
