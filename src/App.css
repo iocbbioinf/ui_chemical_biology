@@ -352,6 +352,12 @@
   white-space: nowrap;
 }
 
+/* ── spectrum graph ── */
+
+.spectrum-graph {
+  overflow-x: auto;
+}
+
 @media (max-width: 700px) {
   .sp-grid {
     grid-template-columns: 1fr;
