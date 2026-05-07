@@ -229,13 +229,10 @@ function App() {
       if (!msrunId) continue
 
       log(`  Creating ${spectra.length} spectrum records…`)
-      let ok = 0, fail = 0
-      for (const sp of spectra) {
-        // extract scan number from native_id (e.g. "scan=19" → "19")
+      const bulkPayload = spectra.map(sp => {
         const scanMatch = sp.native_id?.match(/scan=(\d+)/)
         const embedding = scanMatch ? embeddingsByScan[scanMatch[1]] : undefined
-
-        const spId = await createAndPublish('/api/spectrum', {
+        return {
           metadata: {
             ...rdmBase(),
             title: `${file.name} – ${sp.native_id}`,
@@ -245,10 +242,16 @@ function App() {
             ...sp,
           },
           files: { enabled: false },
-        }, `Spectrum ${sp.native_id}`, () => {}, serverMs)
-        spId ? ok++ : fail++
+        }
+      })
+      const t0 = performance.now()
+      const bulkRes = await apiFetch('/api/spectrum/records/bulk', { method: 'POST', body: JSON.stringify(bulkPayload) })
+      serverMs.total += performance.now() - t0
+      if (bulkRes.ok) {
+        log(`  Spectra: ${bulkRes.json.length} published`)
+      } else {
+        log(`  ✗ Bulk import failed: ${bulkRes.json.message ?? JSON.stringify(bulkRes.json)}`)
       }
-      log(`  Spectra: ${ok} published, ${fail} failed`)
     }
 
     const s = (serverMs.total / 1000).toFixed(1)
