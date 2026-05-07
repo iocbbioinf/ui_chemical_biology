@@ -626,12 +626,12 @@ function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
-  useState(() => {
+  useEffect(() => {
     let cancelled = false
     async function load() {
       setLoading(true); setError('')
       const { ok, json } = await apiFetch(`/api/spectrum/${spectrumId}`)
-      if (!ok || cancelled) { setError(json?.message || 'Failed to load spectrum'); setLoading(false); return }
+      if (cancelled) return; if (!ok) { setError(json?.message || 'Failed to load spectrum'); setLoading(false); return }
       setRecord(json)
       const msrunId = json.metadata?.msrun?.id
       if (msrunId) {
@@ -659,6 +659,86 @@ function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
   )
 }
 
+// ── TagInput ──────────────────────────────────────────────────────────────────
+
+const DATASET_TYPE_SUGGESTIONS = [
+  'Proteomics', 'Metabolomics', 'Genomics', 'Transcriptomics',
+  'Lipidomics', 'Glycomics', 'Structural biology', 'Imaging',
+]
+
+const SPECIES_SUGGESTIONS = [
+  'Homo sapiens', 'Mus musculus', 'Rattus norvegicus', 'Danio rerio',
+  'Drosophila melanogaster', 'Caenorhabditis elegans', 'Saccharomyces cerevisiae',
+  'Arabidopsis thaliana', 'Escherichia coli', 'Bacillus subtilis',
+]
+
+const PTM_SUGGESTIONS = [
+  'Phosphorylation', 'Ubiquitination', 'Acetylation', 'Methylation',
+  'Glycosylation', 'SUMOylation', 'Oxidation', 'Deamidation',
+  'Carbamidomethylation', 'Hydroxylation', 'Palmitoylation', 'Nitrosylation',
+]
+
+function TagInput({ values, onChange, suggestions = [], placeholder, disabled, listId, maxItems = Infinity }) {
+  const [input, setInput] = useState('')
+  const inputRef = useRef(null)
+
+  function addTag(val) {
+    const trimmed = val.trim()
+    if (trimmed && !values.includes(trimmed) && values.length < maxItems) onChange([...values, trimmed])
+    setInput('')
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addTag(input)
+    } else if (e.key === 'Backspace' && input === '' && values.length > 0) {
+      onChange(values.slice(0, -1))
+    }
+  }
+
+  function handleChange(e) {
+    const val = e.target.value
+    if (val.endsWith(',')) { addTag(val.slice(0, -1)); return }
+    // datalist selection fires change with full value — add immediately if it matches a suggestion
+    if (suggestions.includes(val.trim())) { addTag(val); return }
+    setInput(val)
+  }
+
+  function handleBlur() {
+    if (input.trim()) addTag(input)
+  }
+
+  return (
+    <div className={`tag-input${disabled ? ' tag-input--disabled' : ''}`} onClick={() => inputRef.current?.focus()}>
+      {values.map(v => (
+        <span key={v} className="tag">
+          {v}
+          {!disabled && <button type="button" className="tag-remove" onClick={e => { e.stopPropagation(); onChange(values.filter(x => x !== v)) }}>×</button>}
+        </span>
+      ))}
+      {values.length < maxItems && (
+        <input
+          ref={inputRef}
+          list={listId}
+          value={input}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
+          placeholder={values.length === 0 ? placeholder : ''}
+          disabled={disabled}
+          className="tag-input__field"
+        />
+      )}
+      {suggestions.length > 0 && (
+        <datalist id={listId}>
+          {suggestions.filter(s => !values.includes(s)).map(s => <option key={s} value={s} />)}
+        </datalist>
+      )}
+    </div>
+  )
+}
+
 // ── DatasetPage ───────────────────────────────────────────────────────────────
 
 function DatasetPage({ datasetId, onBack, apiFetch }) {
@@ -666,13 +746,14 @@ function DatasetPage({ datasetId, onBack, apiFetch }) {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
-  useState(() => {
+  useEffect(() => {
     let cancelled = false
     async function load() {
       setLoading(true); setError('')
       const { ok, json } = await apiFetch(`/api/dataset/${datasetId}`)
-      if (!ok || cancelled) { setError(json?.message || 'Failed to load dataset'); setLoading(false); return }
-      if (!cancelled) { setRecord(json); setLoading(false) }
+      if (cancelled) return
+      if (!ok) { setError(json?.message || 'Failed to load dataset'); setLoading(false); return }
+      setRecord(json); setLoading(false)
     }
     load()
     return () => { cancelled = true }
@@ -688,11 +769,44 @@ function DatasetPage({ datasetId, onBack, apiFetch }) {
     return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
   }
 
-  const creators = m.creators?.map(c =>
-    c.person_or_org?.name ?? [c.person_or_org?.given_name, c.person_or_org?.family_name].filter(Boolean).join(' ')
-  ).filter(Boolean)
+  // subjects: encoded as "prefix::value" since API's scheme field is dump_only
+  const species   = []
+  const ptms      = []
+  const edamTopics = []
+  const keywords  = []
+  for (const s of m.subjects ?? []) {
+    const raw = s.subject ?? s.id ?? ''
+    if (raw.startsWith('ncbitaxon::'))      species.push(raw.slice('ncbitaxon::'.length))
+    else if (raw.startsWith('unimod::'))    ptms.push(raw.slice('unimod::'.length))
+    else if (raw.startsWith('edam::'))      edamTopics.push(raw.slice('edam::'.length))
+    else if (s.scheme === 'NCBITaxon')      species.push(raw)
+    else if (s.scheme === 'UNIMOD')         ptms.push(raw)
+    else if (s.scheme === 'EDAM')           edamTopics.push(raw)
+    else                                    keywords.push(raw)
+  }
 
-  const languages = m.languages?.map(l => l.title?.en ?? l.id).filter(Boolean)
+  // principal investigator: contributor with role ProjectLeader
+  const pi = m.contributors?.find(c => {
+    const role = c.role
+    if (!role) return false
+    const id = typeof role === 'string' ? role : role.id ?? ''
+    return id === 'ProjectLeader' || id.toLowerCase().includes('principal') || id === 'PIContactRole'
+  })
+  const piName = pi?.person_or_org?.name
+    ?? [pi?.person_or_org?.given_name, pi?.person_or_org?.family_name].filter(Boolean).join(' ')
+    ?? null
+  const piEmail = pi?.person_or_org?.identifiers?.find(id => id.scheme === 'email')?.identifier ?? null
+  const piAffiliation = pi?.affiliations?.[0]?.name ?? null
+  const piCountry = pi?.affiliations?.[0]?.id ?? null
+
+  // description: prefer additional_descriptions abstract, fall back to local description field
+  const abstract = m.additional_descriptions?.find(d => d.type?.id === 'abstract')?.description
+    ?? m.additional_descriptions?.[0]?.description
+    ?? m.description
+    ?? null
+
+  // dataset type: from EDAM subject prefix, fallback to resource_type title
+  const datasetType = edamTopics.length > 0 ? edamTopics.join(', ') : m.resource_type?.title?.en ?? m.resource_type?.id ?? null
 
   return (
     <div>
@@ -705,42 +819,38 @@ function DatasetPage({ datasetId, onBack, apiFetch }) {
       <section className="card">
         <h2 className="sp-title">{m.title ?? record.id}</h2>
 
-        {m.description && <p className="dataset-description">{m.description}</p>}
+        <h3 className="sp-section" style={{ marginTop: '0.5rem' }}>Dataset</h3>
+        <table className="sp-table">
+          <tbody>
+            <Row label="Title"                        value={m.title} />
+            <Row label="Description"                  value={abstract} />
+            <Row label="Dataset type"                 value={datasetType} />
+            <Row label="Species"                      value={species.join(', ') || null} />
+            <Row label="Post-Translational Modifications" value={ptms.join(', ') || null} />
+            <Row label="Keywords"                     value={keywords.join(', ') || null} />
+            <Row label="Published"                    value={m.publication_date} />
+          </tbody>
+        </table>
 
-        <div className="sp-grid">
-          <div>
-            <h3 className="sp-section">Dataset</h3>
-            <table className="sp-table">
-              <tbody>
-                <Row label="Title"            value={m.title} />
-                <Row label="Published"        value={m.publication_date} />
-                <Row label="Languages"        value={languages?.join(', ')} />
-              </tbody>
-            </table>
+        {(piName || piEmail || piAffiliation || piCountry) && <>
+          <h3 className="sp-section">Principal Investigator</h3>
+          <table className="sp-table">
+            <tbody>
+              <Row label="Name"        value={piName} />
+              <Row label="Email"       value={piEmail} />
+              <Row label="Institution" value={piAffiliation} />
+              <Row label="Country"     value={piCountry} />
+            </tbody>
+          </table>
+        </>}
 
-            {creators?.length > 0 && <>
-              <h3 className="sp-section">Creators</h3>
-              <table className="sp-table">
-                <tbody>
-                  {creators.map((name, i) => (
-                    <tr key={i}><td>{name}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </>}
-          </div>
-
-          <div>
-            <h3 className="sp-section">Record</h3>
-            <table className="sp-table">
-              <tbody>
-                <Row label="ID"        value={record.id} />
-                <Row label="Created"   value={record.created?.slice(0, 10)} />
-                <Row label="Published" value={m.publication_date} />
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <h3 className="sp-section">Record</h3>
+        <table className="sp-table">
+          <tbody>
+            <Row label="ID"      value={record.id} />
+            <Row label="Created" value={record.created?.slice(0, 10)} />
+          </tbody>
+        </table>
       </section>
     </div>
   )
@@ -753,13 +863,14 @@ function MsrunPage({ msrunId, onBack, apiFetch }) {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
-  useState(() => {
+  useEffect(() => {
     let cancelled = false
     async function load() {
       setLoading(true); setError('')
       const { ok, json } = await apiFetch(`/api/msrun/${msrunId}`)
-      if (!ok || cancelled) { setError(json?.message || 'Failed to load MS run'); setLoading(false); return }
-      if (!cancelled) { setRecord(json); setLoading(false) }
+      if (cancelled) return
+      if (!ok) { setError(json?.message || 'Failed to load MS run'); setLoading(false); return }
+      setRecord(json); setLoading(false)
     }
     load()
     return () => { cancelled = true }
@@ -890,6 +1001,15 @@ function App() {
   // ── mzML folder import state ──────────────────────────────────────────────
   const [importFiles, setImportFiles]   = useState([])
   const [datasetTitle, setDatasetTitle] = useState('')
+  const [datasetDescription, setDatasetDescription] = useState('')
+  const [datasetType, setDatasetType]   = useState([])
+  const [datasetSpecies, setDatasetSpecies] = useState([])
+  const [datasetPTMs, setDatasetPTMs]   = useState([])
+  const [datasetKeywords, setDatasetKeywords] = useState([])
+  const [piName, setPiName]             = useState('')
+  const [piEmail, setPiEmail]           = useState('')
+  const [piInstitution, setPiInstitution] = useState('')
+  const [piCountry, setPiCountry]       = useState('')
   const [importing, setImporting]       = useState(false)
   const [importLog, setImportLog]       = useState([])
   const folderInputRef = useRef(null)
@@ -1078,9 +1198,45 @@ function App() {
     setImportLog([])
     const log = (msg) => setImportLog(prev => [...prev, msg])
 
+    // ── build subjects ────────────────────────────────────────────────────
+    // scheme is dump_only in SubjectRelationSchema so we encode category as a prefix
+    const subjects = []
+    datasetType.forEach(s => subjects.push({ subject: `edam::${s}` }))
+    datasetSpecies.forEach(s => subjects.push({ subject: `ncbitaxon::${s}` }))
+    datasetPTMs.forEach(s => subjects.push({ subject: `unimod::${s}` }))
+    datasetKeywords.forEach(s => subjects.push({ subject: s }))
+
+    // ── build contributors (PI) ───────────────────────────────────────────
+    const contributors = []
+    if (piName.trim()) {
+      const nameParts = piName.trim().split(/\s+/)
+      contributors.push({
+        person_or_org: {
+          type: 'personal',
+          given_name: nameParts.slice(0, -1).join(' ') || nameParts[0],
+          family_name: nameParts.length > 1 ? nameParts[nameParts.length - 1] : '',
+          name: piName.trim(),
+          ...(piEmail.trim() ? { identifiers: [{ scheme: 'email', identifier: piEmail.trim() }] } : {}),
+        },
+        role: { id: 'ProjectLeader' },
+        ...(piInstitution.trim() ? { affiliations: [{ name: piInstitution.trim(), ...(piCountry.trim() ? { id: piCountry.trim() } : {}) }] } : {}),
+      })
+    }
+
+    // ── build descriptions ────────────────────────────────────────────────
+    const additional_descriptions = []
+    if (datasetDescription.trim())
+      additional_descriptions.push({ description: datasetDescription.trim(), type: { id: 'abstract' } })
+
     log(`Creating dataset "${datasetTitle}"…`)
     const dsId = await createAndPublish('/api/dataset', {
-      metadata: { ...rdmBase(), title: datasetTitle },
+      metadata: {
+        ...rdmBase(),
+        title: datasetTitle,
+        ...(additional_descriptions.length ? { additional_descriptions } : {}),
+        ...(subjects.length ? { subjects } : {}),
+        ...(contributors.length ? { contributors } : {}),
+      },
       files: { enabled: false },
     }, 'Dataset', log)
     if (!dsId) { setImporting(false); return }
@@ -1775,8 +1931,10 @@ function App() {
               + its Spectrum records are created per file.
             </p>
 
+            <h3 className="sp-section" style={{ marginTop: '0.5rem' }}>Dataset</h3>
+
             <div className="form-field">
-              <label>Dataset title</label>
+              <label>Title <span className="required">*</span></label>
               <input
                 type="text"
                 value={datasetTitle}
@@ -1788,7 +1946,121 @@ function App() {
             </div>
 
             <div className="form-field">
-              <label>mzML folder</label>
+              <label>Description</label>
+              <textarea
+                value={datasetDescription}
+                onChange={e => setDatasetDescription(e.target.value)}
+                className="input-wide"
+                rows={3}
+                placeholder="Free-text abstract describing this dataset."
+                disabled={importing}
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Dataset type</label>
+              <TagInput
+                values={datasetType}
+                onChange={setDatasetType}
+                suggestions={DATASET_TYPE_SUGGESTIONS}
+                placeholder="Type or choose dataset type…"
+                disabled={importing}
+                listId="dataset-type-list"
+                maxItems={1}
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Species</label>
+              <TagInput
+                values={datasetSpecies}
+                onChange={setDatasetSpecies}
+                suggestions={SPECIES_SUGGESTIONS}
+                placeholder="Type or choose species…"
+                disabled={importing}
+                listId="species-list"
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Post-Translational Modifications</label>
+              <TagInput
+                values={datasetPTMs}
+                onChange={setDatasetPTMs}
+                suggestions={PTM_SUGGESTIONS}
+                placeholder="Type or choose PTM…"
+                disabled={importing}
+                listId="ptm-list"
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Keywords</label>
+              <TagInput
+                values={datasetKeywords}
+                onChange={setDatasetKeywords}
+                placeholder="Type keyword and press Enter…"
+                disabled={importing}
+                listId="keyword-list"
+              />
+            </div>
+
+            <h3 className="sp-section">Principal Investigator</h3>
+
+            <div className="form-row">
+              <div className="form-field">
+                <label>Name</label>
+                <input
+                  type="text"
+                  value={piName}
+                  onChange={e => setPiName(e.target.value)}
+                  className="input-wide"
+                  placeholder="e.g. Jane Smith"
+                  disabled={importing}
+                />
+              </div>
+              <div className="form-field">
+                <label>Email</label>
+                <input
+                  type="email"
+                  value={piEmail}
+                  onChange={e => setPiEmail(e.target.value)}
+                  className="input-wide"
+                  placeholder="e.g. jane.smith@university.edu"
+                  disabled={importing}
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-field">
+                <label>Institution</label>
+                <input
+                  type="text"
+                  value={piInstitution}
+                  onChange={e => setPiInstitution(e.target.value)}
+                  className="input-wide"
+                  placeholder="e.g. Czech Academy of Sciences"
+                  disabled={importing}
+                />
+              </div>
+              <div className="form-field">
+                <label>Country</label>
+                <input
+                  type="text"
+                  value={piCountry}
+                  onChange={e => setPiCountry(e.target.value)}
+                  className="input-wide"
+                  placeholder="ISO 3166 code, e.g. CZ"
+                  maxLength={2}
+                  disabled={importing}
+                />
+              </div>
+            </div>
+
+            <h3 className="sp-section">mzML Files</h3>
+
+            <div className="form-field">
               <div className="row" style={{ marginBottom: 0 }}>
                 <input
                   ref={folderInputRef}
