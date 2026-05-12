@@ -20,6 +20,13 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
   const lowestMz      = cvVal(m.spectrum_cv_params, 'MS:1000528')
   const highestMz     = cvVal(m.spectrum_cv_params, 'MS:1000527')
   const filterStr     = cvVal(m.scan_list?.scans?.[0]?.cv_params, 'MS:1000512')
+  const molFormula    = cvVal(m.spectrum_cv_params, 'MS:1000866')
+    ?? m.spectrum_cv_params?.find(p => p.name?.toLowerCase().includes('formula'))?.value
+
+  const organism      = msrunMeta?.samples
+    ?.flatMap(s => s.cv_params ?? [])
+    .find(p => p.accession === 'MS:1001469' || p.name?.toLowerCase().includes('organism') || p.name?.toLowerCase().includes('taxon'))
+    ?.value
 
   const pre          = m.precursor_list?.[0]
   const selIon       = pre?.selected_ions?.[0]
@@ -81,6 +88,8 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
                 <Row label="Representation"      value={m.spectrum_representation?.title?.en} />
                 <Row label="Polarity"            value={m.scan_polarity?.title?.en} />
                 <Row label="MS level"            value={msLevel} />
+                <Row label="Molecular formula"   value={molFormula} />
+                <Row label="Organism"            value={organism} />
                 <Row label="Retention time"      value={retentionTime ? `${parseFloat(retentionTime).toFixed(4)} min` : null} />
                 <Row label="Base peak m/z"       value={basePeakMz ? parseFloat(basePeakMz).toFixed(4) : null} />
                 <Row label="Base peak intensity" value={basePeakInt ? parseFloat(basePeakInt).toExponential(3) : null} />

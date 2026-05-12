@@ -36,6 +36,10 @@ function MsrunPage({ msrunId, onBack, apiFetch }) {
     return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
   }
 
+  const fileEntry = record.files?.enabled
+    ? Object.values(record.files?.entries ?? {})[0]
+    : null
+
   return (
     <div>
       <div className="sp-actions">
@@ -57,6 +61,12 @@ function MsrunPage({ msrunId, onBack, apiFetch }) {
                 <Row label="Started"       value={m.start_time_stamp} />
                 <Row label="Spectra"       value={m.spectrum_count} />
                 <Row label="Dataset"       value={m.dataset?.metadata?.title} />
+                {fileEntry && (
+                  <tr>
+                    <td className="sp-label">File</td>
+                    <td><a href={`/api/msrun/${record.id}/files/${encodeURIComponent(fileEntry.key)}/content`}>{fileEntry.key}</a></td>
+                  </tr>
+                )}
               </tbody>
             </table>
 

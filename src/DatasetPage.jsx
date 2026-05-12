@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react'
 
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+}
+
 // ── DatasetPage ───────────────────────────────────────────────────────────────
 
 function DatasetPage({ datasetId, onBack, apiFetch }) {
   const [record,  setRecord]  = useState(null)
+  const [msruns,  setMsruns]  = useState([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
@@ -14,7 +22,14 @@ function DatasetPage({ datasetId, onBack, apiFetch }) {
       const { ok, json } = await apiFetch(`/api/dataset/${datasetId}`)
       if (cancelled) return
       if (!ok) { setError(json?.message || 'Failed to load dataset'); setLoading(false); return }
-      setRecord(json); setLoading(false)
+      setRecord(json)
+      const { ok: mok, json: mj } = await apiFetch(`/api/msrun?q=metadata.dataset.id:${datasetId}&size=100`)
+      if (!cancelled && mok) {
+        const hits = mj.hits?.hits ?? []
+        const full = await Promise.all(hits.map(h => apiFetch(`/api/msrun/${h.id}`).then(r => r.ok ? r.json : h)))
+        if (!cancelled) setMsruns(full)
+      }
+      if (!cancelled) setLoading(false)
     }
     load()
     return () => { cancelled = true }
@@ -101,6 +116,28 @@ function DatasetPage({ datasetId, onBack, apiFetch }) {
               <Row label="Email"       value={piEmail} />
               <Row label="Institution" value={piAffiliation} />
               <Row label="Country"     value={piCountry} />
+            </tbody>
+          </table>
+        </>}
+
+        {msruns.length > 0 && <>
+          <h3 className="sp-section">Files</h3>
+          <table className="sp-table">
+            <thead>
+              <tr><th className="sp-label">Filename</th><th>Size</th></tr>
+            </thead>
+            <tbody>
+              {msruns.map(r => {
+                const fileEntry = Object.values(r.files?.entries ?? {})[0]
+                const filename = fileEntry?.key ?? r.metadata?.title?.split(' – ').slice(1).join(' – ') ?? r.id
+                const href = fileEntry ? `/api/msrun/${r.id}/files/${encodeURIComponent(fileEntry.key)}/content` : null
+                return (
+                  <tr key={r.id}>
+                    <td>{href ? <a href={href}>{filename}</a> : filename}</td>
+                    <td>{fileEntry?.size != null ? formatBytes(fileEntry.size) : '—'}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </>}

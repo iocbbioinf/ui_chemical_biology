@@ -34,7 +34,6 @@ function App() {
   const [piName, setPiName]             = useState('')
   const [piEmail, setPiEmail]           = useState('')
   const [piInstitution, setPiInstitution] = useState('')
-  const [piCountry, setPiCountry]       = useState('')
   const [importing, setImporting]       = useState(false)
   const [importLog, setImportLog]       = useState([])
   const folderInputRef = useRef(null)
@@ -82,7 +81,7 @@ function App() {
     return { ok: res.ok, status: res.status, json }
   }
 
-  async function createAndPublish(path, payload, label, log, serverMs) {
+  async function createAndPublish(path, payload, label, log, serverMs, file = null) {
     const t0 = performance.now()
     const draft = await apiFetch(path, { method: 'POST', body: JSON.stringify(payload) })
     if (serverMs) serverMs.total += performance.now() - t0
@@ -91,6 +90,35 @@ function App() {
       return null
     }
     const id = draft.json.id
+
+    if (file) {
+      const initRes = await apiFetch(`${path}/${id}/draft/files`, {
+        method: 'POST',
+        body: JSON.stringify([{ key: file.name }]),
+      })
+      if (!initRes.ok) {
+        log(`  ✗ ${label} file init failed: ${JSON.stringify(initRes.json)}`)
+        return null
+      }
+      const uploadRes = await apiFetch(`${path}/${id}/draft/files/${encodeURIComponent(file.name)}/content`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+      })
+      if (!uploadRes.ok) {
+        log(`  ✗ ${label} file upload failed: ${JSON.stringify(uploadRes.json)}`)
+        return null
+      }
+      const commitRes = await apiFetch(`${path}/${id}/draft/files/${encodeURIComponent(file.name)}/commit`, {
+        method: 'POST',
+      })
+      if (!commitRes.ok) {
+        log(`  ✗ ${label} file commit failed: ${JSON.stringify(commitRes.json)}`)
+        return null
+      }
+      log(`  ✓ ${label} file uploaded: ${file.name}`)
+    }
+
     const t1 = performance.now()
     const pub = await apiFetch(`${path}/${id}/draft/actions/publish`, { method: 'POST' })
     if (serverMs) serverMs.total += performance.now() - t1
@@ -169,7 +197,7 @@ function App() {
           ...(piEmail.trim() ? { identifiers: [{ scheme: 'email', identifier: piEmail.trim() }] } : {}),
         },
         role: { id: 'ProjectLeader' },
-        ...(piInstitution.trim() ? { affiliations: [{ name: piInstitution.trim(), ...(piCountry.trim() ? { id: piCountry.trim() } : {}) }] } : {}),
+        ...(piInstitution.trim() ? { affiliations: [{ name: piInstitution.trim() }] } : {}),
       })
     }
 
@@ -224,8 +252,8 @@ function App() {
       const msrunTitle = `${datasetTitle} – ${file.name}`
       const msrunId = await createAndPublish('/api/msrun', {
         metadata: { ...rdmBase(), title: msrunTitle, dataset: { id: dsId }, ...msrunMeta },
-        files: { enabled: false },
-      }, 'MSRun', log, serverMs)
+        files: { enabled: true },
+      }, 'MSRun', log, serverMs, file)
       if (!msrunId) continue
 
       log(`  Creating ${spectra.length} spectrum records…`)
@@ -991,18 +1019,6 @@ function App() {
                   onChange={e => setPiInstitution(e.target.value)}
                   className="input-wide"
                   placeholder="e.g. Czech Academy of Sciences"
-                  disabled={importing}
-                />
-              </div>
-              <div className="form-field">
-                <label>Country</label>
-                <input
-                  type="text"
-                  value={piCountry}
-                  onChange={e => setPiCountry(e.target.value)}
-                  className="input-wide"
-                  placeholder="ISO 3166 code, e.g. CZ"
-                  maxLength={2}
                   disabled={importing}
                 />
               </div>
