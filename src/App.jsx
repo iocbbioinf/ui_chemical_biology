@@ -492,583 +492,448 @@ function App() {
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="app">
-      {/* ── top navbar ── */}
-      <header className="navbar">
-        <span className="navbar-title">Spectrum Admin</span>
-        <div className="navbar-auth">
+    <main className="min-h-screen bg-slate-950 text-white">
+
+      {/* ── fixed top navbar ── */}
+      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between border-b border-white/10 bg-slate-950/95 backdrop-blur px-6 py-4">
+        <div className="flex items-center gap-3">
+          <img src="/ms-banner.png" alt="Mass spectrometry spectrum" className="w-auto flex-shrink-0 rounded" style={{ height: '88px', filter: 'invert(1)' }} />
+          <strong className="text-2xl">Repository for Chemical Biology Data</strong>
+        </div>
+        <div className="flex items-center gap-3">
           {user ? (
-            <div className="user-menu">
-              <span className="navbar-user">{user.email}</span>
-              <span className="role-badge">admin</span>
-              <button onClick={handleLogout} className="btn-secondary btn-sm">Log out</button>
-            </div>
+            <>
+              <span className="text-sm text-slate-400">{user.email}</span>
+              <span className="rounded px-2 py-0.5 text-sm font-semibold bg-green-900/60 text-green-400 border border-green-700/50">admin</span>
+              <button onClick={handleLogout} className="rounded-full bg-white px-4 py-2 text-sm text-slate-950">Log out</button>
+            </>
           ) : (
-            <button className="btn-primary btn-sm" onClick={() => setShowLoginModal(true)}>
-              Log in
-            </button>
+            <button onClick={() => setShowLoginModal(true)} className="rounded-full bg-white px-4 py-2 text-sm text-slate-950">Log in</button>
           )}
         </div>
-      </header>
+      </nav>
 
       {/* ── login modal ── */}
       {showLoginModal && (
-        <div className="modal-backdrop" onClick={() => { setShowLoginModal(false); setLoginError('') }}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>Log in</h2>
-            <form onSubmit={handleLogin}>
-              <div className="form-field">
-                <label>Email</label>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { setShowLoginModal(false); setLoginError('') }}>
+          <div className="rounded-2xl bg-white/10 backdrop-blur p-6 w-full max-w-sm flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+            <p className="text-lg font-semibold">Log in</p>
+            <form onSubmit={handleLogin} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-white/60">Email</label>
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="input-wide" required autoFocus />
               </div>
-              <div className="form-field">
-                <label>Password</label>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-white/60">Password</label>
                 <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-wide" required />
               </div>
-              {loginError && <p className="error">{loginError}</p>}
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => { setShowLoginModal(false); setLoginError('') }}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={loggingIn}>
-                  {loggingIn ? 'Logging in…' : 'Log in'}
-                </button>
+              {loginError && <p className="text-red-400 text-xs">{loginError}</p>}
+              <div className="flex justify-end gap-2 mt-1">
+                <button type="button" className="rounded-full bg-white/15 px-4 py-2 text-sm text-white" onClick={() => { setShowLoginModal(false); setLoginError('') }}>Cancel</button>
+                <button type="submit" className="rounded-full bg-white px-4 py-2 text-sm text-slate-950" disabled={loggingIn}>{loggingIn ? 'Logging in…' : 'Log in'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* ── tabs ── */}
-      <div className="tabs">
-        <button
-          className={`tab${activeTab === 'search' ? ' tab-active' : ''}`}
-          onClick={() => setActiveTab('search')}
-        >
-          Search
-        </button>
-        <button
-          className={`tab${activeTab === 'import' ? ' tab-active' : ''}${!user ? ' tab-locked' : ''}`}
-          onClick={() => user ? setActiveTab('import') : setShowLoginModal(true)}
-          title={!user ? 'Log in to access dataset import' : undefined}
-        >
-          Import Dataset
-          {!user && <span className="lock-icon">🔒</span>}
-        </button>
-      </div>
+      {/* ── body: sidebar + main ── */}
+      <section className="grid gap-4 p-6 pt-[8rem] lg:grid-cols-[200px_1fr]">
 
-      {/* ── search tab ── */}
-      {activeTab === 'search' && localSpectrumPage && (
-        <SpectrumDetail
-          m={localSpectrumPage.spec}
-          msrunMeta={localSpectrumPage.msrun}
-          onBack={() => setLocalSpectrumPage(null)}
-        />
-      )}
-      {activeTab === 'search' && !localSpectrumPage && spectrumPage && (
-        <SpectrumPage
-          spectrumId={spectrumPage}
-          onBack={() => setSpectrumPage(null)}
-          onSimilaritySearch={searchSimilar}
-          apiFetch={apiFetch}
-        />
-      )}
-      {activeTab === 'search' && !localSpectrumPage && !spectrumPage && msrunPage && (
-        <MsrunPage
-          msrunId={msrunPage}
-          onBack={() => setMsrunPage(null)}
-          apiFetch={apiFetch}
-        />
-      )}
-      {activeTab === 'search' && !localSpectrumPage && !spectrumPage && !msrunPage && datasetPage && (
-        <DatasetPage
-          datasetId={datasetPage}
-          onBack={() => setDatasetPage(null)}
-          apiFetch={apiFetch}
-        />
-      )}
-      {activeTab === 'search' && !localSpectrumPage && !spectrumPage && !msrunPage && !datasetPage && (
-        <section className="card">
-          <h2>Search Spectra</h2>
+        {/* ── left sidebar: nav tabs ── */}
+        <aside className="rounded-2xl bg-white/10 p-4 flex flex-col gap-1 h-fit lg:sticky lg:top-[8rem]">
+          <button
+            onClick={() => setActiveTab('search')}
+            className={`w-full text-left px-3 py-2 text-sm rounded-xl transition-colors ${activeTab === 'search' ? 'bg-white/20 font-semibold' : 'hover:bg-white/10'}`}
+          >
+            Search
+          </button>
+          <button
+            onClick={() => user ? setActiveTab('import') : setShowLoginModal(true)}
+            title={!user ? 'Log in to access dataset import' : undefined}
+            className={`w-full text-left px-3 py-2 text-sm rounded-xl transition-colors flex items-center gap-1.5 ${activeTab === 'import' ? 'bg-white/20 font-semibold' : !user ? 'opacity-40' : 'hover:bg-white/10'}`}
+          >
+            Import Dataset
+            {!user && <span className="text-xs">🔒</span>}
+          </button>
+        </aside>
 
-          <div className="search-filters">
-            <div className="filter-group">
-              <span className="filter-label">Precursor m/z</span>
-              <div className="filter-range">
-                <label>
-                  Min
-                  <input
-                    type="number"
-                    value={precursorMzMin}
-                    onChange={e => setPrecursorMzMin(e.target.value)}
-                    className="input-mz"
-                    placeholder="e.g. 100"
-                    step="any"
-                  />
-                </label>
-                <span className="range-dash">–</span>
-                <label>
-                  Max
-                  <input
-                    type="number"
-                    value={precursorMzMax}
-                    onChange={e => setPrecursorMzMax(e.target.value)}
-                    className="input-mz"
-                    placeholder="e.g. 500"
-                    step="any"
-                  />
-                </label>
-              </div>
-            </div>
+        {/* ── main content ── */}
+        <div className="min-w-0">
 
-            <div className="filter-group">
-              <label className="filter-label" htmlFor="formula-input">Molecular formula</label>
-              <input
-                id="formula-input"
-                type="text"
-                value={formula}
-                onChange={e => setFormula(e.target.value)}
-                className="input-wide"
-                placeholder="e.g. C8H10N4O2"
-              />
-            </div>
+          {/* ── search tab ── */}
+          {activeTab === 'search' && localSpectrumPage && (
+            <SpectrumDetail
+              m={localSpectrumPage.spec}
+              msrunMeta={localSpectrumPage.msrun}
+              onBack={() => setLocalSpectrumPage(null)}
+            />
+          )}
+          {activeTab === 'search' && !localSpectrumPage && spectrumPage && (
+            <SpectrumPage
+              spectrumId={spectrumPage}
+              onBack={() => setSpectrumPage(null)}
+              onSimilaritySearch={searchSimilar}
+              apiFetch={apiFetch}
+            />
+          )}
+          {activeTab === 'search' && !localSpectrumPage && !spectrumPage && msrunPage && (
+            <MsrunPage
+              msrunId={msrunPage}
+              onBack={() => setMsrunPage(null)}
+              apiFetch={apiFetch}
+            />
+          )}
+          {activeTab === 'search' && !localSpectrumPage && !spectrumPage && !msrunPage && datasetPage && (
+            <DatasetPage
+              datasetId={datasetPage}
+              onBack={() => setDatasetPage(null)}
+              apiFetch={apiFetch}
+            />
+          )}
+          {activeTab === 'search' && !localSpectrumPage && !spectrumPage && !msrunPage && !datasetPage && (
+            <div className="flex flex-col gap-4">
 
-            <div className="filter-group">
-              <label className="filter-label" htmlFor="organism-input">Organism</label>
-              <input
-                id="organism-input"
-                type="text"
-                value={organism}
-                onChange={e => setOrganism(e.target.value)}
-                className="input-wide"
-                placeholder="e.g. Homo sapiens"
-              />
-            </div>
+              {/* filters panel */}
+              <div className="rounded-2xl bg-white/10 p-4 flex flex-col gap-3">
+                <div className="flex flex-wrap items-end gap-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-white/60">Precursor m/z</span>
+                    <div className="flex items-center gap-2">
+                      <input type="number" value={precursorMzMin} onChange={e => setPrecursorMzMin(e.target.value)} className="input-mz" placeholder="Min" step="any" />
+                      <span className="text-white/40 text-xs">–</span>
+                      <input type="number" value={precursorMzMax} onChange={e => setPrecursorMzMax(e.target.value)} className="input-mz" placeholder="Max" step="any" />
+                    </div>
+                  </div>
 
-            <div className="filter-group">
-              <label className="filter-label">mzML file (similarity search)</label>
-              <div className="mz-file-row">
-                <input
-                  ref={mzFileInputRef}
-                  type="file"
-                  accept=".mzml,.xml"
-                  style={{ display: 'none' }}
-                  onChange={e => { setMzFile(e.target.files?.[0] ?? null); setMzSearchResults(null); setMzSearchError('') }}
-                />
-                <button className="btn-secondary btn-sm" onClick={() => mzFileInputRef.current.click()} disabled={mzSearching}>
-                  Choose file…
-                </button>
-                <span className="mz-file-name">{mzFile ? mzFile.name : 'No file selected'}</span>
-                {mzFile && (
-                  <button className="btn-secondary btn-sm" onClick={() => { setMzFile(null); setMzSearchResults(null); setMzSearchError(''); mzFileInputRef.current.value = '' }} disabled={mzSearching}>
-                    ✕
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-white/60" htmlFor="formula-input">Molecular formula</label>
+                    <input id="formula-input" type="text" value={formula} onChange={e => setFormula(e.target.value)} className="input-wide" placeholder="e.g. C8H10N4O2" />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-white/60" htmlFor="organism-input">Organism</label>
+                    <input id="organism-input" type="text" value={organism} onChange={e => setOrganism(e.target.value)} className="input-wide" placeholder="e.g. Homo sapiens" />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-white/60">mzML file</span>
+                    <input ref={mzFileInputRef} type="file" accept=".mzml,.xml" style={{ display: 'none' }} onChange={e => { setMzFile(e.target.files?.[0] ?? null); setMzSearchResults(null); setMzSearchError('') }} />
+                    <div className="flex items-center gap-2">
+                      <button className="rounded-full bg-white/15 px-4 py-2 text-sm text-white" onClick={() => mzFileInputRef.current.click()} disabled={mzSearching}>Choose file…</button>
+                      {mzFile && <button className="rounded-full bg-white/15 px-4 py-2 text-sm text-white" onClick={() => { setMzFile(null); setMzSearchResults(null); setMzSearchError(''); mzFileInputRef.current.value = '' }} disabled={mzSearching}>✕</button>}
+                      {mzFile && <span className="text-xs text-white/50 truncate max-w-[12rem]">{mzFile.name}</span>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button onClick={() => searchSpectra(0)} disabled={searching} className="rounded-full bg-white/15 px-4 py-2 text-sm text-white disabled:opacity-40">
+                    {searching ? 'Searching…' : 'Search Repo'}
                   </button>
-                )}
-              </div>
-            </div>
-          </div>
+                  {mzFile && (
+                    <button onClick={runMzFileSearch} disabled={mzSearching || searching} className="rounded-full bg-white/15 px-4 py-2 text-sm text-white disabled:opacity-40">
+                      {mzSearching ? (mzSearchProgress || 'Searching…') : 'Search by mzML File'}
+                    </button>
+                  )}
+                </div>
 
-          <div className="search-actions">
-            <button onClick={() => searchSpectra(0)} disabled={searching} className="btn-primary search-btn">
-              {searching ? 'Searching…' : 'Search Repo'}
-            </button>
-            {mzFile && (
-              <button onClick={runMzFileSearch} disabled={mzSearching || searching} className="btn-primary search-btn">
-                {mzSearching ? (mzSearchProgress || 'Searching…') : 'Search by mzML File'}
-              </button>
-            )}
-          </div>
-
-          {searchError && <p className="error">{searchError}</p>}
-          {mzSearchError && <p className="error">{mzSearchError}</p>}
-
-          {searchResults && (() => {
-            const rows = (searchResults.hits?.hits ?? []).map(hit => {
-              const m = hit.metadata ?? {}
-              const msrun = searchResults.msrunMap?.[m.msrun?.id]
-              return {
-                hit,
-                scanId:      m.native_id ?? '',
-                precMz:      m.precursor_list?.[0]?.selected_ions?.[0]?.selected_ion_mz ?? null,
-                charge:      m.precursor_list?.[0]?.selected_ions?.[0]?.charge_state ?? '',
-                polarity:    m.scan_polarity?.id === 'MS:1000130' ? 'pos' : m.scan_polarity?.id === 'MS:1000129' ? 'neg' : '',
-                msLevel:     m.spectrum_cv_params?.find(p => p.accession === 'MS:1000511')?.value ?? '',
-                fragMethod:  m.precursor_list?.[0]?.activation?.dissociation_method?.title?.en
-                               ?? m.precursor_list?.[0]?.activation?.dissociation_method?.id ?? '',
-                instrument:  (() => {
-                  const ic = msrun?.metadata?.instrument_configurations?.[0]
-                  if (!ic) return ''
-                  if (ic.instrument_model?.name) return ic.instrument_model.name
-                  const analyzers = ic.analyzers?.map(a => a.mass_analyzer_type?.name).filter(Boolean)
-                  return analyzers?.length ? analyzers.join(' / ') : ''
-                })(),
-                runId:          msrun?.metadata?.run_id ?? '',
-                msrunRecordId:  m.msrun?.id ?? null,
-                dataset:        msrun?.metadata?.dataset?.metadata?.title ?? '',
-                datasetRecordId: msrun?.metadata?.dataset?.id ?? null,
-                sourceId:       hit.id,
-              }
-            })
-
-            const total = searchResults.hits?.total?.value ?? searchResults.hits?.total ?? 0
-            const totalPages = Math.ceil(total / SPECTRA_PAGE_SIZE)
-
-            function SortTh({ col, children, className }) {
-              const active = sortCol === col
-              const sortable = col in SORT_OPTIONS
-              const indicator = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''
-              if (!sortable) return <th className={className ?? ''}>{children}</th>
-              return (
-                <th
-                  className={`sortable${active ? ' sort-active' : ''}${className ? ' ' + className : ''}`}
-                  onClick={() => {
-                    const newDir = sortCol === col && sortDir === 'asc' ? 'desc' : 'asc'
-                    setSortCol(col); setSortDir(newDir)
-                    searchSpectra(0, { col, dir: newDir })
-                  }}
-                >{children}{indicator}</th>
-              )
-            }
-
-            return (
-              <div className="results">
-                <p className="results-count">
-                  <strong>{total}</strong> spectra found
-                </p>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <SortTh col="scanId" className="col-name">Scan ID</SortTh>
-                      <SortTh col="precMz">Precursor m/z</SortTh>
-                      <SortTh col="charge">Charge</SortTh>
-                      <SortTh col="polarity">Mode</SortTh>
-                      <SortTh col="msLevel">MS level</SortTh>
-                      <SortTh col="fragMethod">Fragmentation</SortTh>
-                      <SortTh col="instrument">Instrument</SortTh>
-                      <SortTh col="runId">Run ID</SortTh>
-                      <SortTh col="dataset">Dataset</SortTh>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.length > 0
-                      ? rows.map((r, idx) => (
-                          <tr key={r.hit.id}>
-                            <td>{spectraPage * SPECTRA_PAGE_SIZE + idx + 1}</td>
-                            <td className="col-name" title={r.scanId}>
-                              <button className="link-btn" onClick={() => setSpectrumPage(r.sourceId)}>
-                                {(r.scanId?.match(/scan=(\d+)/)?.[1] ?? r.scanId) || r.sourceId}
-                              </button>
-                            </td>
-                            <td>{r.precMz != null ? r.precMz.toFixed(4) : '—'}</td>
-                            <td>{r.charge !== '' ? r.charge : '—'}</td>
-                            <td><span className={`polarity-badge polarity-${r.polarity || '-'}`}>{r.polarity || '—'}</span></td>
-                            <td>{r.msLevel || '—'}</td>
-                            <td>{r.fragMethod || '—'}</td>
-                            <td>{r.instrument || '—'}</td>
-                            <td>
-                              {r.msrunRecordId
-                                ? <button className="link-btn" onClick={() => setMsrunPage(r.msrunRecordId)}>
-                                    <code className="cv-id">{r.runId || r.msrunRecordId}</code>
-                                  </button>
-                                : <code className="cv-id">{r.runId || '—'}</code>
-                              }
-                            </td>
-                            <td>
-                              {r.datasetRecordId
-                                ? <button className="link-btn" onClick={() => setDatasetPage(r.datasetRecordId)}>
-                                    {r.dataset || r.datasetRecordId}
-                                  </button>
-                                : (r.dataset || '—')
-                              }
-                            </td>
-                          </tr>
-                        ))
-                      : (
-                        <tr>
-                          <td colSpan={10} className="no-results">No spectra matched the filters.</td>
-                        </tr>
-                      )
-                    }
-                  </tbody>
-                </table>
-                {totalPages > 1 && (
-                  <div className="pagination">
-                    <button className="btn-secondary" onClick={() => searchSpectra(0)} disabled={spectraPage === 0 || searching}>«</button>
-                    <button className="btn-secondary" onClick={() => searchSpectra(spectraPage - 1)} disabled={spectraPage === 0 || searching}>‹</button>
-                    <span>Page {spectraPage + 1} of {totalPages}</span>
-                    <button className="btn-secondary" onClick={() => searchSpectra(spectraPage + 1)} disabled={spectraPage >= totalPages - 1 || searching}>›</button>
-                    <button className="btn-secondary" onClick={() => searchSpectra(totalPages - 1)} disabled={spectraPage >= totalPages - 1 || searching}>»</button>
+                {(searchError || mzSearchError) && (
+                  <div>
+                    {searchError && <p className="text-red-400 text-xs">{searchError}</p>}
+                    {mzSearchError && <p className="text-red-400 text-xs">{mzSearchError}</p>}
                   </div>
                 )}
               </div>
-            )
-          })()}
 
-          {mzSearchResults && (() => {
-            const { rows, msrunMap } = mzSearchResults
-            if (rows.length === 0) return (
-              <p className="hint" style={{ marginTop: '1rem' }}>No matches found for any spectrum in the file.</p>
-            )
-            return (
-              <div className="results mz-results" style={{ marginTop: '1.5rem' }}>
-                <p className="results-count">
-                  <strong>{rows.length}</strong> spectra matched (sorted by best similarity)
-                </p>
-                <div className="mz-results-table-wrap">
-                  <table className="mz-results-table">
-                    <thead>
-                      <tr>
-                        <th colSpan={6} className="mz-col-group mz-col-group-local">Local mzML spectrum</th>
-                        <th colSpan={5} className="mz-col-group mz-col-group-repo">Best match in repository</th>
-                      </tr>
-                      <tr>
-                        <th>#</th>
-                        <th>Scan ID</th>
-                        <th>Prec. m/z</th>
-                        <th>Charge</th>
-                        <th>Mode</th>
-                        <th>RT (min)</th>
-                        <th>Rank</th>
-                        <th>Scan ID</th>
-                        <th>Prec. m/z</th>
-                        <th>Dataset</th>
-                        <th>Run ID</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row, rowIdx) => {
-                        const { local, localSpec, mzMsrun: rowMzMsrun, matches } = row
-                        return matches.map((hit, hitIdx) => {
-                          const m = hit.metadata ?? {}
-                          const msrun = msrunMap?.[m.msrun?.id]
-                          const repoScanId = m.native_id ?? hit.id
-                          const repoPrecMz = m.precursor_list?.[0]?.selected_ions?.[0]?.selected_ion_mz
-                          const repoDataset = msrun?.metadata?.dataset?.metadata?.title ?? msrun?.metadata?.dataset?.id ?? ''
-                          const repoRunId = msrun?.metadata?.run_id ?? ''
-                          const msrunRecordId = m.msrun?.id ?? null
-                          const datasetRecordId = msrun?.metadata?.dataset?.id ?? null
+              {/* results panel */}
+              <div className="rounded-2xl bg-white/10 p-4 overflow-x-auto">
+              <>
+              {searchResults && (() => {
+                const rows = (searchResults.hits?.hits ?? []).map(hit => {
+                  const m = hit.metadata ?? {}
+                  const msrun = searchResults.msrunMap?.[m.msrun?.id]
+                  return {
+                    hit,
+                    scanId:      m.native_id ?? '',
+                    precMz:      m.precursor_list?.[0]?.selected_ions?.[0]?.selected_ion_mz ?? null,
+                    charge:      m.precursor_list?.[0]?.selected_ions?.[0]?.charge_state ?? '',
+                    polarity:    m.scan_polarity?.id === 'MS:1000130' ? 'pos' : m.scan_polarity?.id === 'MS:1000129' ? 'neg' : '',
+                    msLevel:     m.spectrum_cv_params?.find(p => p.accession === 'MS:1000511')?.value ?? '',
+                    fragMethod:  m.precursor_list?.[0]?.activation?.dissociation_method?.title?.en
+                                   ?? m.precursor_list?.[0]?.activation?.dissociation_method?.id ?? '',
+                    instrument:  (() => {
+                      const ic = msrun?.metadata?.instrument_configurations?.[0]
+                      if (!ic) return ''
+                      if (ic.instrument_model?.name) return ic.instrument_model.name
+                      const analyzers = ic.analyzers?.map(a => a.mass_analyzer_type?.name).filter(Boolean)
+                      return analyzers?.length ? analyzers.join(' / ') : ''
+                    })(),
+                    runId:           msrun?.metadata?.run_id ?? '',
+                    msrunRecordId:   m.msrun?.id ?? null,
+                    dataset:         msrun?.metadata?.dataset?.metadata?.title ?? '',
+                    datasetRecordId: msrun?.metadata?.dataset?.id ?? null,
+                    sourceId:        hit.id,
+                  }
+                })
 
-                          return (
-                            <tr key={`${rowIdx}-${hitIdx}`} className={hitIdx === 0 ? 'mz-row-best' : 'mz-row-alt'}>
-                              {hitIdx === 0 && <>
-                                <td rowSpan={matches.length} className="mz-local-cell mz-seq">{rowIdx + 1}</td>
-                                <td rowSpan={matches.length} className="mz-local-cell col-name" title={local.scanId}>
-                                  <button className="link-btn" onClick={() => setLocalSpectrumPage({ spec: localSpec, msrun: rowMzMsrun })}>
-                                    {local.scanId?.match(/scan=(\d+)/)?.[1] ?? local.scanId}
+                const total = searchResults.hits?.total?.value ?? searchResults.hits?.total ?? 0
+                const totalPages = Math.ceil(total / SPECTRA_PAGE_SIZE)
+
+                function SortTh({ col, children, className }) {
+                  const active = sortCol === col
+                  const sortable = col in SORT_OPTIONS
+                  const indicator = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''
+                  if (!sortable) return <th className={className ?? ''}>{children}</th>
+                  return (
+                    <th
+                      className={`sortable${active ? ' sort-active' : ''}${className ? ' ' + className : ''}`}
+                      onClick={() => {
+                        const newDir = sortCol === col && sortDir === 'asc' ? 'desc' : 'asc'
+                        setSortCol(col); setSortDir(newDir)
+                        searchSpectra(0, { col, dir: newDir })
+                      }}
+                    >{children}{indicator}</th>
+                  )
+                }
+
+                return (
+                  <div className="results">
+                    <p className="results-count"><strong>{total}</strong> spectra found</p>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <SortTh col="scanId" className="col-name">Scan ID</SortTh>
+                          <SortTh col="precMz">Precursor m/z</SortTh>
+                          <SortTh col="charge">Charge</SortTh>
+                          <SortTh col="polarity">Mode</SortTh>
+                          <SortTh col="msLevel">MS level</SortTh>
+                          <SortTh col="fragMethod">Fragmentation</SortTh>
+                          <SortTh col="instrument">Instrument</SortTh>
+                          <SortTh col="runId">Run ID</SortTh>
+                          <SortTh col="dataset">Dataset</SortTh>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.length > 0
+                          ? rows.map((r, idx) => (
+                              <tr key={r.hit.id}>
+                                <td>{spectraPage * SPECTRA_PAGE_SIZE + idx + 1}</td>
+                                <td className="col-name" title={r.scanId}>
+                                  <button className="link-btn" onClick={() => setSpectrumPage(r.sourceId)}>
+                                    {(r.scanId?.match(/scan=(\d+)/)?.[1] ?? r.scanId) || r.sourceId}
                                   </button>
                                 </td>
-                                <td rowSpan={matches.length} className="mz-local-cell">
-                                  {local.precMz != null ? local.precMz.toFixed(4) : '—'}
+                                <td>{r.precMz != null ? r.precMz.toFixed(4) : '—'}</td>
+                                <td>{r.charge !== '' ? r.charge : '—'}</td>
+                                <td><span className={`polarity-badge polarity-${r.polarity || '-'}`}>{r.polarity || '—'}</span></td>
+                                <td>{r.msLevel || '—'}</td>
+                                <td>{r.fragMethod || '—'}</td>
+                                <td>{r.instrument || '—'}</td>
+                                <td>
+                                  {r.msrunRecordId
+                                    ? <button className="link-btn" onClick={() => setMsrunPage(r.msrunRecordId)}><code className="cv-id">{r.runId || r.msrunRecordId}</code></button>
+                                    : <code className="cv-id">{r.runId || '—'}</code>
+                                  }
                                 </td>
-                                <td rowSpan={matches.length} className="mz-local-cell">{local.charge || '—'}</td>
-                                <td rowSpan={matches.length} className="mz-local-cell">
-                                  <span className={`polarity-badge polarity-${local.polarity || '-'}`}>{local.polarity || '—'}</span>
+                                <td>
+                                  {r.datasetRecordId
+                                    ? <button className="link-btn" onClick={() => setDatasetPage(r.datasetRecordId)}>{r.dataset || r.datasetRecordId}</button>
+                                    : (r.dataset || '—')
+                                  }
                                 </td>
-                                <td rowSpan={matches.length} className="mz-local-cell">
-                                  {local.rt ? parseFloat(local.rt).toFixed(3) : '—'}
-                                </td>
-                              </>}
-                              <td className="mz-rank-cell">{hitIdx + 1}</td>
-                              <td>
-                                <button className="link-btn" onClick={() => setSpectrumPage(hit.id)}>
-                                  {repoScanId?.match(/scan=(\d+)/)?.[1] ?? repoScanId}
-                                </button>
-                              </td>
-                              <td>{repoPrecMz != null ? repoPrecMz.toFixed(4) : '—'}</td>
-                              <td>
-                                {datasetRecordId
-                                  ? <button className="link-btn" onClick={() => setDatasetPage(datasetRecordId)}>{repoDataset || datasetRecordId}</button>
-                                  : (repoDataset || '—')}
-                              </td>
-                              <td>
-                                {msrunRecordId
-                                  ? <button className="link-btn" onClick={() => setMsrunPage(msrunRecordId)}><code className="cv-id">{repoRunId || msrunRecordId}</code></button>
-                                  : <code className="cv-id">{repoRunId || '—'}</code>}
-                              </td>
-                            </tr>
-                          )
-                        })
-                      })}
-                    </tbody>
-                  </table>
+                              </tr>
+                            ))
+                          : <tr><td colSpan={10} className="no-results">No spectra matched the filters.</td></tr>
+                        }
+                      </tbody>
+                    </table>
+                    {totalPages > 1 && (
+                      <div className="pagination">
+                        <button className="btn-secondary" onClick={() => searchSpectra(0)} disabled={spectraPage === 0 || searching}>«</button>
+                        <button className="btn-secondary" onClick={() => searchSpectra(spectraPage - 1)} disabled={spectraPage === 0 || searching}>‹</button>
+                        <span>Page {spectraPage + 1} of {totalPages}</span>
+                        <button className="btn-secondary" onClick={() => searchSpectra(spectraPage + 1)} disabled={spectraPage >= totalPages - 1 || searching}>›</button>
+                        <button className="btn-secondary" onClick={() => searchSpectra(totalPages - 1)} disabled={spectraPage >= totalPages - 1 || searching}>»</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {mzSearchResults && (() => {
+                const { rows, msrunMap } = mzSearchResults
+                if (rows.length === 0) return (
+                  <p className="hint" style={{ marginTop: '1rem' }}>No matches found for any spectrum in the file.</p>
+                )
+                return (
+                  <div className="results mz-results" style={{ marginTop: '1.5rem' }}>
+                    <p className="results-count"><strong>{rows.length}</strong> spectra matched (sorted by best similarity)</p>
+                    <div className="mz-results-table-wrap">
+                      <table className="mz-results-table">
+                        <thead>
+                          <tr>
+                            <th colSpan={6} className="mz-col-group mz-col-group-local">Local mzML spectrum</th>
+                            <th colSpan={5} className="mz-col-group mz-col-group-repo">Best match in repository</th>
+                          </tr>
+                          <tr>
+                            <th>#</th><th>Scan ID</th><th>Prec. m/z</th><th>Charge</th><th>Mode</th><th>RT (min)</th>
+                            <th>Rank</th><th>Scan ID</th><th>Prec. m/z</th><th>Dataset</th><th>Run ID</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, rowIdx) => {
+                            const { local, localSpec, mzMsrun: rowMzMsrun, matches } = row
+                            return matches.map((hit, hitIdx) => {
+                              const m = hit.metadata ?? {}
+                              const msrun = msrunMap?.[m.msrun?.id]
+                              const repoScanId = m.native_id ?? hit.id
+                              const repoPrecMz = m.precursor_list?.[0]?.selected_ions?.[0]?.selected_ion_mz
+                              const repoDataset = msrun?.metadata?.dataset?.metadata?.title ?? msrun?.metadata?.dataset?.id ?? ''
+                              const repoRunId = msrun?.metadata?.run_id ?? ''
+                              const msrunRecordId = m.msrun?.id ?? null
+                              const datasetRecordId = msrun?.metadata?.dataset?.id ?? null
+                              return (
+                                <tr key={`${rowIdx}-${hitIdx}`} className={hitIdx === 0 ? 'mz-row-best' : 'mz-row-alt'}>
+                                  {hitIdx === 0 && <>
+                                    <td rowSpan={matches.length} className="mz-local-cell mz-seq">{rowIdx + 1}</td>
+                                    <td rowSpan={matches.length} className="mz-local-cell col-name" title={local.scanId}>
+                                      <button className="link-btn" onClick={() => setLocalSpectrumPage({ spec: localSpec, msrun: rowMzMsrun })}>
+                                        {local.scanId?.match(/scan=(\d+)/)?.[1] ?? local.scanId}
+                                      </button>
+                                    </td>
+                                    <td rowSpan={matches.length} className="mz-local-cell">{local.precMz != null ? local.precMz.toFixed(4) : '—'}</td>
+                                    <td rowSpan={matches.length} className="mz-local-cell">{local.charge || '—'}</td>
+                                    <td rowSpan={matches.length} className="mz-local-cell">
+                                      <span className={`polarity-badge polarity-${local.polarity || '-'}`}>{local.polarity || '—'}</span>
+                                    </td>
+                                    <td rowSpan={matches.length} className="mz-local-cell">{local.rt ? parseFloat(local.rt).toFixed(3) : '—'}</td>
+                                  </>}
+                                  <td className="mz-rank-cell">{hitIdx + 1}</td>
+                                  <td>
+                                    <button className="link-btn" onClick={() => setSpectrumPage(hit.id)}>
+                                      {repoScanId?.match(/scan=(\d+)/)?.[1] ?? repoScanId}
+                                    </button>
+                                  </td>
+                                  <td>{repoPrecMz != null ? repoPrecMz.toFixed(4) : '—'}</td>
+                                  <td>
+                                    {datasetRecordId
+                                      ? <button className="link-btn" onClick={() => setDatasetPage(datasetRecordId)}>{repoDataset || datasetRecordId}</button>
+                                      : (repoDataset || '—')}
+                                  </td>
+                                  <td>
+                                    {msrunRecordId
+                                      ? <button className="link-btn" onClick={() => setMsrunPage(msrunRecordId)}><code className="cv-id">{repoRunId || msrunRecordId}</code></button>
+                                      : <code className="cv-id">{repoRunId || '—'}</code>}
+                                  </td>
+                                </tr>
+                              )
+                            })
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })()}
+              </>
+              </div>
+            </div>
+          )}
+
+          {/* ── import tab ── */}
+          {activeTab === 'import' && user && (
+            <div className="rounded-2xl bg-white/10 p-4">
+              <h2>Import mzML Folder</h2>
+              <p className="hint">
+                Select a folder of <code>.xml</code> (mzML) files. One Dataset is created, then one MSRun
+                + its Spectrum records are created per file.
+              </p>
+
+              <h3 className="sp-section" style={{ marginTop: '0.5rem' }}>Dataset</h3>
+
+              <div className="form-field">
+                <label>Title <span className="required">*</span></label>
+                <input type="text" value={datasetTitle} onChange={e => setDatasetTitle(e.target.value)} className="input-wide" placeholder="e.g. My LC-MS experiment 2024" disabled={importing} />
+              </div>
+
+              <div className="form-field">
+                <label>Description</label>
+                <textarea value={datasetDescription} onChange={e => setDatasetDescription(e.target.value)} className="input-wide" rows={3} placeholder="Free-text abstract describing this dataset." disabled={importing} />
+              </div>
+
+              <div className="form-field">
+                <label>Dataset type</label>
+                <TagInput values={datasetType} onChange={setDatasetType} suggestions={DATASET_TYPE_SUGGESTIONS} placeholder="Type or choose dataset type…" disabled={importing} listId="dataset-type-list" maxItems={1} />
+              </div>
+
+              <div className="form-field">
+                <label>Species</label>
+                <TagInput values={datasetSpecies} onChange={setDatasetSpecies} suggestions={SPECIES_SUGGESTIONS} placeholder="Type or choose species…" disabled={importing} listId="species-list" />
+              </div>
+
+              <div className="form-field">
+                <label>Post-Translational Modifications</label>
+                <TagInput values={datasetPTMs} onChange={setDatasetPTMs} suggestions={PTM_SUGGESTIONS} placeholder="Type or choose PTM…" disabled={importing} listId="ptm-list" />
+              </div>
+
+              <div className="form-field">
+                <label>Keywords</label>
+                <TagInput values={datasetKeywords} onChange={setDatasetKeywords} placeholder="Type keyword and press Enter…" disabled={importing} listId="keyword-list" />
+              </div>
+
+              <h3 className="sp-section">Principal Investigator</h3>
+
+              <div className="form-row">
+                <div className="form-field">
+                  <label>Name</label>
+                  <input type="text" value={piName} onChange={e => setPiName(e.target.value)} className="input-wide" placeholder="e.g. Jane Smith" disabled={importing} />
+                </div>
+                <div className="form-field">
+                  <label>Email</label>
+                  <input type="email" value={piEmail} onChange={e => setPiEmail(e.target.value)} className="input-wide" placeholder="e.g. jane.smith@university.edu" disabled={importing} />
                 </div>
               </div>
-            )
-          })()}
-        </section>
-      )}
 
-      {/* ── import tab (authenticated only) ── */}
-      {activeTab === 'import' && user && (
-        <>
-          <section className="card">
-            <h2>Import mzML Folder</h2>
-            <p className="hint">
-              Select a folder of <code>.xml</code> (mzML) files. One Dataset is created, then one MSRun
-              + its Spectrum records are created per file.
-            </p>
+              <div className="form-row">
+                <div className="form-field">
+                  <label>Institution</label>
+                  <input type="text" value={piInstitution} onChange={e => setPiInstitution(e.target.value)} className="input-wide" placeholder="e.g. Czech Academy of Sciences" disabled={importing} />
+                </div>
+              </div>
 
-            <h3 className="sp-section" style={{ marginTop: '0.5rem' }}>Dataset</h3>
+              <h3 className="sp-section">mzML Files</h3>
 
-            <div className="form-field">
-              <label>Title <span className="required">*</span></label>
-              <input
-                type="text"
-                value={datasetTitle}
-                onChange={e => setDatasetTitle(e.target.value)}
-                className="input-wide"
-                placeholder="e.g. My LC-MS experiment 2024"
-                disabled={importing}
-              />
-            </div>
-
-            <div className="form-field">
-              <label>Description</label>
-              <textarea
-                value={datasetDescription}
-                onChange={e => setDatasetDescription(e.target.value)}
-                className="input-wide"
-                rows={3}
-                placeholder="Free-text abstract describing this dataset."
-                disabled={importing}
-              />
-            </div>
-
-            <div className="form-field">
-              <label>Dataset type</label>
-              <TagInput
-                values={datasetType}
-                onChange={setDatasetType}
-                suggestions={DATASET_TYPE_SUGGESTIONS}
-                placeholder="Type or choose dataset type…"
-                disabled={importing}
-                listId="dataset-type-list"
-                maxItems={1}
-              />
-            </div>
-
-            <div className="form-field">
-              <label>Species</label>
-              <TagInput
-                values={datasetSpecies}
-                onChange={setDatasetSpecies}
-                suggestions={SPECIES_SUGGESTIONS}
-                placeholder="Type or choose species…"
-                disabled={importing}
-                listId="species-list"
-              />
-            </div>
-
-            <div className="form-field">
-              <label>Post-Translational Modifications</label>
-              <TagInput
-                values={datasetPTMs}
-                onChange={setDatasetPTMs}
-                suggestions={PTM_SUGGESTIONS}
-                placeholder="Type or choose PTM…"
-                disabled={importing}
-                listId="ptm-list"
-              />
-            </div>
-
-            <div className="form-field">
-              <label>Keywords</label>
-              <TagInput
-                values={datasetKeywords}
-                onChange={setDatasetKeywords}
-                placeholder="Type keyword and press Enter…"
-                disabled={importing}
-                listId="keyword-list"
-              />
-            </div>
-
-            <h3 className="sp-section">Principal Investigator</h3>
-
-            <div className="form-row">
               <div className="form-field">
-                <label>Name</label>
-                <input
-                  type="text"
-                  value={piName}
-                  onChange={e => setPiName(e.target.value)}
-                  className="input-wide"
-                  placeholder="e.g. Jane Smith"
-                  disabled={importing}
-                />
+                <div className="row" style={{ marginBottom: 0 }}>
+                  <input ref={folderInputRef} type="file" webkitdirectory="" directory="" multiple style={{ display: 'none' }} onChange={handleFolderSelect} />
+                  <button className="rounded-full bg-white/15 px-4 py-2 text-sm text-white" onClick={() => folderInputRef.current.click()} disabled={importing}>Choose folder…</button>
+                  <span style={{ fontSize: '0.85rem', color: '#888', alignSelf: 'center' }}>
+                    {importFiles.length > 0 ? `${importFiles.length} .xml file${importFiles.length > 1 ? 's' : ''} selected` : 'No folder selected'}
+                  </span>
+                </div>
               </div>
-              <div className="form-field">
-                <label>Email</label>
-                <input
-                  type="email"
-                  value={piEmail}
-                  onChange={e => setPiEmail(e.target.value)}
-                  className="input-wide"
-                  placeholder="e.g. jane.smith@university.edu"
-                  disabled={importing}
-                />
-              </div>
+
+              {importFiles.length > 0 && (
+                <ul className="file-list">
+                  {importFiles.map(f => <li key={f.name}>{f.name} <span className="file-size">({(f.size / 1024).toFixed(1)} KB)</span></li>)}
+                </ul>
+              )}
+
+              <button onClick={importFolder} disabled={importing || importFiles.length === 0} className="rounded-full bg-white px-4 py-2 text-sm text-slate-950 disabled:opacity-40 mt-2">
+                {importing ? 'Importing…' : 'Create Dataset & Import Runs'}
+              </button>
+
+              {importLog.length > 0 && (
+                <pre className="mt-3 rounded-2xl bg-white/10 p-4 text-xs text-white/80 leading-relaxed max-h-64 overflow-y-auto whitespace-pre-wrap font-mono">{importLog.join('\n')}</pre>
+              )}
             </div>
+          )}
 
-            <div className="form-row">
-              <div className="form-field">
-                <label>Institution</label>
-                <input
-                  type="text"
-                  value={piInstitution}
-                  onChange={e => setPiInstitution(e.target.value)}
-                  className="input-wide"
-                  placeholder="e.g. Czech Academy of Sciences"
-                  disabled={importing}
-                />
-              </div>
-            </div>
-
-            <h3 className="sp-section">mzML Files</h3>
-
-            <div className="form-field">
-              <div className="row" style={{ marginBottom: 0 }}>
-                <input
-                  ref={folderInputRef}
-                  type="file"
-                  webkitdirectory=""
-                  directory=""
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={handleFolderSelect}
-                />
-                <button className="btn-secondary" onClick={() => folderInputRef.current.click()} disabled={importing}>
-                  Choose folder…
-                </button>
-                <span style={{ fontSize: '0.85rem', color: '#888', alignSelf: 'center' }}>
-                  {importFiles.length > 0
-                    ? `${importFiles.length} .xml file${importFiles.length > 1 ? 's' : ''} selected`
-                    : 'No folder selected'}
-                </span>
-              </div>
-            </div>
-
-            {importFiles.length > 0 && (
-              <ul className="file-list">
-                {importFiles.map(f => <li key={f.name}>{f.name} <span className="file-size">({(f.size / 1024).toFixed(1)} KB)</span></li>)}
-              </ul>
-            )}
-
-            <button
-              onClick={importFolder}
-              disabled={importing || importFiles.length === 0}
-              className="btn-primary"
-              style={{ marginTop: '0.8rem' }}
-            >
-              {importing ? 'Importing…' : 'Create Dataset & Import Runs'}
-            </button>
-
-            {importLog.length > 0 && <pre className="log">{importLog.join('\n')}</pre>}
-          </section>
-
-        </>
-      )}
-    </div>
+        </div>
+      </section>
+    </main>
   )
 }
 

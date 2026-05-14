@@ -128,7 +128,7 @@ function SpectrumGraph({ binaryDataArrayList }) {
           const x = toX(mz)
           const y = toY(normInt[i])
           const isHovered = hoveredIdx === i
-          const color = isHovered ? '#f0a030' : '#6480ff'
+          const color = isHovered ? '#ffffff' : 'rgba(255,255,255,0.6)'
           return (
             <g key={i}>
               <line

@@ -7,7 +7,19 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`
 }
 
-// ── DatasetPage ───────────────────────────────────────────────────────────────
+function Row({ label, value }) {
+  if (value == null || value === '') return null
+  return (
+    <tr className="border-b border-white/5 last:border-0">
+      <td className="py-1.5 pr-4 text-xs text-white/50 whitespace-nowrap w-2/5">{label}</td>
+      <td className="py-1.5 text-sm">{value}</td>
+    </tr>
+  )
+}
+
+function SectionHeading({ children }) {
+  return <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mt-4 mb-1">{children}</p>
+}
 
 function DatasetPage({ datasetId, onBack, apiFetch }) {
   const [record,  setRecord]  = useState(null)
@@ -35,82 +47,68 @@ function DatasetPage({ datasetId, onBack, apiFetch }) {
     return () => { cancelled = true }
   }, [datasetId])
 
-  if (loading) return <div className="card"><p className="hint">Loading…</p></div>
-  if (error)   return <div className="card"><p className="error">{error}</p></div>
+  if (loading) return <div className="rounded-2xl bg-white/10 p-4"><p className="text-sm text-white/50">Loading…</p></div>
+  if (error)   return <div className="rounded-2xl bg-white/10 p-4"><p className="text-red-400 text-sm">{error}</p></div>
 
   const m = record.metadata ?? {}
 
-  function Row({ label, value }) {
-    if (value == null || value === '') return null
-    return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
-  }
-
-  // subjects: encoded as "prefix::value" since API's scheme field is dump_only
-  const species   = []
-  const ptms      = []
+  const species    = []
+  const ptms       = []
   const edamTopics = []
-  const keywords  = []
+  const keywords   = []
   for (const s of m.subjects ?? []) {
     const raw = s.subject ?? s.id ?? ''
-    if (raw.startsWith('ncbitaxon::'))      species.push(raw.slice('ncbitaxon::'.length))
-    else if (raw.startsWith('unimod::'))    ptms.push(raw.slice('unimod::'.length))
-    else if (raw.startsWith('edam::'))      edamTopics.push(raw.slice('edam::'.length))
-    else if (s.scheme === 'NCBITaxon')      species.push(raw)
-    else if (s.scheme === 'UNIMOD')         ptms.push(raw)
-    else if (s.scheme === 'EDAM')           edamTopics.push(raw)
-    else                                    keywords.push(raw)
+    if (raw.startsWith('ncbitaxon::'))   species.push(raw.slice('ncbitaxon::'.length))
+    else if (raw.startsWith('unimod::')) ptms.push(raw.slice('unimod::'.length))
+    else if (raw.startsWith('edam::'))   edamTopics.push(raw.slice('edam::'.length))
+    else if (s.scheme === 'NCBITaxon')   species.push(raw)
+    else if (s.scheme === 'UNIMOD')      ptms.push(raw)
+    else if (s.scheme === 'EDAM')        edamTopics.push(raw)
+    else                                 keywords.push(raw)
   }
 
-  // principal investigator: contributor with role ProjectLeader
   const pi = m.contributors?.find(c => {
     const role = c.role
     if (!role) return false
     const id = typeof role === 'string' ? role : role.id ?? ''
     return id === 'ProjectLeader' || id.toLowerCase().includes('principal') || id === 'PIContactRole'
   })
-  const piName = pi?.person_or_org?.name
-    ?? [pi?.person_or_org?.given_name, pi?.person_or_org?.family_name].filter(Boolean).join(' ')
-    ?? null
-  const piEmail = pi?.person_or_org?.identifiers?.find(id => id.scheme === 'email')?.identifier ?? null
+  const piName        = pi?.person_or_org?.name ?? [pi?.person_or_org?.given_name, pi?.person_or_org?.family_name].filter(Boolean).join(' ') ?? null
+  const piEmail       = pi?.person_or_org?.identifiers?.find(id => id.scheme === 'email')?.identifier ?? null
   const piAffiliation = pi?.affiliations?.[0]?.name ?? null
-  const piCountry = pi?.affiliations?.[0]?.id ?? null
+  const piCountry     = pi?.affiliations?.[0]?.id ?? null
 
-  // description: prefer additional_descriptions abstract, fall back to local description field
-  const abstract = m.additional_descriptions?.find(d => d.type?.id === 'abstract')?.description
-    ?? m.additional_descriptions?.[0]?.description
-    ?? m.description
-    ?? null
-
-  // dataset type: from EDAM subject prefix, fallback to resource_type title
+  const abstract    = m.additional_descriptions?.find(d => d.type?.id === 'abstract')?.description
+    ?? m.additional_descriptions?.[0]?.description ?? m.description ?? null
   const datasetType = edamTopics.length > 0 ? edamTopics.join(', ') : m.resource_type?.title?.en ?? m.resource_type?.id ?? null
 
   return (
-    <div>
-      <div className="sp-actions">
-        <button className="btn-secondary btn-sm" onClick={onBack}>
-          ← Back to results
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <button className="rounded-full bg-white/15 px-4 py-2 text-sm text-white" onClick={onBack}>
+          ← Back
         </button>
       </div>
 
-      <section className="card">
-        <h2 className="sp-title">{m.title ?? record.id}</h2>
+      <div className="rounded-2xl bg-white/10 p-4">
+        <p className="text-lg font-semibold">{m.title ?? record.id}</p>
 
-        <h3 className="sp-section" style={{ marginTop: '0.5rem' }}>Dataset</h3>
-        <table className="sp-table">
+        <SectionHeading>Dataset</SectionHeading>
+        <table className="w-full">
           <tbody>
-            <Row label="Title"                        value={m.title} />
-            <Row label="Description"                  value={abstract} />
-            <Row label="Dataset type"                 value={datasetType} />
-            <Row label="Species"                      value={species.join(', ') || null} />
-            <Row label="Post-Translational Modifications" value={ptms.join(', ') || null} />
-            <Row label="Keywords"                     value={keywords.join(', ') || null} />
-            <Row label="Published"                    value={m.publication_date} />
+            <Row label="Title"        value={m.title} />
+            <Row label="Description"  value={abstract} />
+            <Row label="Dataset type" value={datasetType} />
+            <Row label="Species"      value={species.join(', ') || null} />
+            <Row label="PTMs"         value={ptms.join(', ') || null} />
+            <Row label="Keywords"     value={keywords.join(', ') || null} />
+            <Row label="Published"    value={m.publication_date} />
           </tbody>
         </table>
 
         {(piName || piEmail || piAffiliation || piCountry) && <>
-          <h3 className="sp-section">Principal Investigator</h3>
-          <table className="sp-table">
+          <SectionHeading>Principal Investigator</SectionHeading>
+          <table className="w-full">
             <tbody>
               <Row label="Name"        value={piName} />
               <Row label="Email"       value={piEmail} />
@@ -121,20 +119,25 @@ function DatasetPage({ datasetId, onBack, apiFetch }) {
         </>}
 
         {msruns.length > 0 && <>
-          <h3 className="sp-section">Files</h3>
-          <table className="sp-table">
+          <SectionHeading>Files</SectionHeading>
+          <table className="w-full">
             <thead>
-              <tr><th className="sp-label">Filename</th><th>Size</th></tr>
+              <tr className="border-b border-white/10">
+                <th className="py-1.5 pr-4 text-xs text-white/40 font-semibold text-left">Filename</th>
+                <th className="py-1.5 text-xs text-white/40 font-semibold text-left">Size</th>
+              </tr>
             </thead>
             <tbody>
               {msruns.map(r => {
                 const fileEntry = Object.values(r.files?.entries ?? {})[0]
-                const filename = fileEntry?.key ?? r.metadata?.title?.split(' – ').slice(1).join(' – ') ?? r.id
-                const href = fileEntry ? `/api/msrun/${r.id}/files/${encodeURIComponent(fileEntry.key)}/content` : null
+                const filename  = fileEntry?.key ?? r.metadata?.title?.split(' – ').slice(1).join(' – ') ?? r.id
+                const href      = fileEntry ? `/api/msrun/${r.id}/files/${encodeURIComponent(fileEntry.key)}/content` : null
                 return (
-                  <tr key={r.id}>
-                    <td>{href ? <a href={href}>{filename}</a> : filename}</td>
-                    <td>{fileEntry?.size != null ? formatBytes(fileEntry.size) : '—'}</td>
+                  <tr key={r.id} className="border-b border-white/5 last:border-0">
+                    <td className="py-1.5 pr-4 text-sm">
+                      {href ? <a href={href} className="underline underline-offset-2 text-white/80 hover:text-white">{filename}</a> : filename}
+                    </td>
+                    <td className="py-1.5 text-sm text-white/50">{fileEntry?.size != null ? formatBytes(fileEntry.size) : '—'}</td>
                   </tr>
                 )
               })}
@@ -142,14 +145,14 @@ function DatasetPage({ datasetId, onBack, apiFetch }) {
           </table>
         </>}
 
-        <h3 className="sp-section">Record</h3>
-        <table className="sp-table">
+        <SectionHeading>Record</SectionHeading>
+        <table className="w-full">
           <tbody>
             <Row label="ID"      value={record.id} />
             <Row label="Created" value={record.created?.slice(0, 10)} />
           </tbody>
         </table>
-      </section>
+      </div>
     </div>
   )
 }

@@ -1,11 +1,19 @@
 import { useState, useEffect } from 'react'
 import SpectrumGraph from './SpectrumGraph.jsx'
 
-// ── SpectrumDetail ────────────────────────────────────────────────────────────
-// Pure rendering component. Accepts a pre-loaded metadata object `m` (the
-// spectrum metadata), an optional `msrunMeta` object (the msrun metadata fields),
-// an optional repo `recordId` / `recordCreated` for the Record section,
-// and action callbacks.
+function Row({ label, value }) {
+  if (value == null || value === '') return null
+  return (
+    <tr className="border-b border-white/5 last:border-0">
+      <td className="py-1.5 pr-4 text-xs text-white/50 whitespace-nowrap w-2/5">{label}</td>
+      <td className="py-1.5 text-sm">{value}</td>
+    </tr>
+  )
+}
+
+function SectionHeading({ children }) {
+  return <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mt-4 mb-1">{children}</p>
+}
 
 function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimilaritySearch }) {
   const [simSearching, setSimSearching] = useState(false)
@@ -23,7 +31,7 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
   const molFormula    = cvVal(m.spectrum_cv_params, 'MS:1000866')
     ?? m.spectrum_cv_params?.find(p => p.name?.toLowerCase().includes('formula'))?.value
 
-  const organism      = msrunMeta?.samples
+  const organism = msrunMeta?.samples
     ?.flatMap(s => s.cv_params ?? [])
     .find(p => p.accession === 'MS:1001469' || p.name?.toLowerCase().includes('organism') || p.name?.toLowerCase().includes('taxon'))
     ?.value
@@ -39,11 +47,6 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
 
   const embedding = m.dreams_embedding
 
-  function Row({ label, value }) {
-    if (value == null || value === '') return null
-    return <tr><td className="sp-label">{label}</td><td>{value}</td></tr>
-  }
-
   async function handleSimilaritySearch() {
     if (!embedding || !onSimilaritySearch) return
     setSimSearching(true)
@@ -52,37 +55,33 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
   }
 
   return (
-    <div>
-      <div className="sp-actions">
-        <button className="btn-secondary btn-sm" onClick={onBack}>
-          ← Back to results
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <button className="rounded-full bg-white/15 px-4 py-2 text-sm text-white" onClick={onBack}>
+          ← Back
         </button>
         {embedding && onSimilaritySearch && (
-          <button
-            className="btn-primary btn-sm"
-            onClick={handleSimilaritySearch}
-            disabled={simSearching}
-          >
+          <button className="rounded-full bg-white px-4 py-2 text-sm text-slate-950" onClick={handleSimilaritySearch} disabled={simSearching}>
             {simSearching ? 'Searching…' : 'Find Similar Spectra'}
           </button>
         )}
       </div>
 
-      <section className="card">
-        <h2 className="sp-title">{m.native_id ?? recordId}</h2>
-        <p className="hint">{m.title}</p>
+      <div className="rounded-2xl bg-white/10 p-4">
+        <p className="text-lg font-semibold break-all">{m.native_id ?? recordId}</p>
+        {m.title && <p className="text-sm text-white/50 mt-0.5">{m.title}</p>}
 
         {m.binary_data_array_list?.length > 0 && (
           <>
-            <h3 className="sp-section">Peak Graph</h3>
+            <SectionHeading>Peak Graph</SectionHeading>
             <SpectrumGraph binaryDataArrayList={m.binary_data_array_list} />
           </>
         )}
 
-        <div className="sp-grid">
+        <div className="grid gap-6 md:grid-cols-2 mt-2">
           <div>
-            <h3 className="sp-section">Spectrum</h3>
-            <table className="sp-table">
+            <SectionHeading>Spectrum</SectionHeading>
+            <table className="w-full">
               <tbody>
                 <Row label="Spectrum type"       value={m.spectrum_type?.title?.en} />
                 <Row label="Representation"      value={m.spectrum_representation?.title?.en} />
@@ -100,17 +99,17 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
             </table>
 
             {pre && <>
-              <h3 className="sp-section">Precursor</h3>
-              <table className="sp-table">
+              <SectionHeading>Precursor</SectionHeading>
+              <table className="w-full">
                 <tbody>
-                  <Row label="Selected ion m/z"     value={selIon?.selected_ion_mz != null ? selIon.selected_ion_mz.toFixed(4) : null} />
-                  <Row label="Charge state"          value={selIon?.charge_state} />
-                  <Row label="Intensity"             value={selIon?.intensity != null ? parseFloat(selIon.intensity).toExponential(3) : null} />
-                  <Row label="Isolation target m/z"  value={pre.isolation_window?.target_mz?.toFixed(4)} />
-                  <Row label="Isolation window"      value={pre.isolation_window?.lower_offset != null ? `±${pre.isolation_window.lower_offset.toFixed(3)} Da` : null} />
-                  <Row label="Dissociation method"   value={dissociation} />
-                  <Row label="Activation energy"     value={pre.activation?.activation_energy != null ? `${pre.activation.activation_energy} eV` : null} />
-                  <Row label="Precursor scan ref"    value={pre.spectrum_ref} />
+                  <Row label="Selected ion m/z"    value={selIon?.selected_ion_mz != null ? selIon.selected_ion_mz.toFixed(4) : null} />
+                  <Row label="Charge state"         value={selIon?.charge_state} />
+                  <Row label="Intensity"            value={selIon?.intensity != null ? parseFloat(selIon.intensity).toExponential(3) : null} />
+                  <Row label="Isolation target m/z" value={pre.isolation_window?.target_mz?.toFixed(4)} />
+                  <Row label="Isolation window"     value={pre.isolation_window?.lower_offset != null ? `±${pre.isolation_window.lower_offset.toFixed(3)} Da` : null} />
+                  <Row label="Dissociation method"  value={dissociation} />
+                  <Row label="Activation energy"    value={pre.activation?.activation_energy != null ? `${pre.activation.activation_energy} eV` : null} />
+                  <Row label="Precursor scan ref"   value={pre.spectrum_ref} />
                 </tbody>
               </table>
             </>}
@@ -118,8 +117,8 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
 
           <div>
             {msrunMeta && <>
-              <h3 className="sp-section">MS Run</h3>
-              <table className="sp-table">
+              <SectionHeading>MS Run</SectionHeading>
+              <table className="w-full">
                 <tbody>
                   <Row label="Run ID"     value={msrunMeta.run_id} />
                   <Row label="Dataset"    value={msrunMeta.dataset?.metadata?.title} />
@@ -131,13 +130,13 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
               </table>
 
               {msrunMeta.samples?.length > 0 && <>
-                <h3 className="sp-section">Samples</h3>
-                <table className="sp-table">
+                <SectionHeading>Samples</SectionHeading>
+                <table className="w-full">
                   <tbody>
                     {msrunMeta.samples.map((s, i) => (
-                      <tr key={i}>
-                        <td className="sp-label">{s.name ?? s.sample_id}</td>
-                        <td>{s.cv_params?.map(p => p.value || p.name).filter(Boolean).join(', ') || '—'}</td>
+                      <tr key={i} className="border-b border-white/5 last:border-0">
+                        <td className="py-1.5 pr-4 text-xs text-white/50 whitespace-nowrap w-2/5">{s.name ?? s.sample_id}</td>
+                        <td className="py-1.5 text-sm">{s.cv_params?.map(p => p.value || p.name).filter(Boolean).join(', ') || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -145,26 +144,22 @@ function SpectrumDetail({ m, msrunMeta, recordId, recordCreated, onBack, onSimil
               </>}
             </>}
 
-            {recordId && (
-              <>
-                <h3 className="sp-section">Record</h3>
-                <table className="sp-table">
-                  <tbody>
-                    <Row label="ID"        value={recordId} />
-                    <Row label="Created"   value={recordCreated?.slice(0, 10)} />
-                    <Row label="Published" value={m.publication_date} />
-                  </tbody>
-                </table>
-              </>
-            )}
+            {recordId && <>
+              <SectionHeading>Record</SectionHeading>
+              <table className="w-full">
+                <tbody>
+                  <Row label="ID"        value={recordId} />
+                  <Row label="Created"   value={recordCreated?.slice(0, 10)} />
+                  <Row label="Published" value={m.publication_date} />
+                </tbody>
+              </table>
+            </>}
           </div>
         </div>
-      </section>
+      </div>
     </div>
   )
 }
-
-// ── SpectrumPage ──────────────────────────────────────────────────────────────
 
 function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
   const [record,  setRecord]  = useState(null)
@@ -190,8 +185,8 @@ function SpectrumPage({ spectrumId, onBack, onSimilaritySearch, apiFetch }) {
     return () => { cancelled = true }
   }, [spectrumId])
 
-  if (loading) return <div className="card"><p className="hint">Loading…</p></div>
-  if (error)   return <div className="card"><p className="error">{error}</p></div>
+  if (loading) return <div className="rounded-2xl bg-white/10 p-4"><p className="text-sm text-white/50">Loading…</p></div>
+  if (error)   return <div className="rounded-2xl bg-white/10 p-4"><p className="text-red-400 text-sm">{error}</p></div>
 
   return (
     <SpectrumDetail
