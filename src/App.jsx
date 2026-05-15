@@ -19,6 +19,7 @@ function App() {
   const [loginError, setLoginError] = useState('')
   const [loggingIn, setLoggingIn] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
+  const [pendingTab, setPendingTab]         = useState(null)
 
   // ── tab state ─────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('search')
@@ -149,6 +150,7 @@ function App() {
     setShowLoginModal(false)
     setEmail('')
     setPassword('')
+    if (pendingTab) { setActiveTab(pendingTab); setPendingTab(null) }
   }
 
   function handleLogout() {
@@ -257,9 +259,14 @@ function App() {
       if (!msrunId) continue
 
       log(`  Creating ${spectra.length} spectrum records…`)
+      const ic0 = msrunMeta.instrument_configurations?.[0]
+      const instrumentModel = ic0?.instrument_model?.name
+        ?? ic0?.analyzers?.map(a => a.mass_analyzer_type?.name).filter(Boolean).join(' / ')
+        ?? null
       const bulkPayload = spectra.map(sp => {
         const scanMatch = sp.native_id?.match(/scan=(\d+)/)
         const embedding = scanMatch ? embeddingsByScan[scanMatch[1]] : undefined
+        const msLevel = sp.spectrum_cv_params?.find(p => p.accession === 'MS:1000511')?.value ?? null
         return {
           metadata: {
             ...rdmBase(),
@@ -267,6 +274,8 @@ function App() {
             ...(embedding ? { dreams_embedding: embedding } : {}),
             dataset: { id: dsId },
             msrun: { id: msrunId },
+            ...(msLevel !== null ? { ms_level: msLevel } : {}),
+            ...(instrumentModel ? { instrument_model: instrumentModel } : {}),
             ...sp,
           },
           files: { enabled: false },
@@ -291,15 +300,23 @@ function App() {
 
   const SPECTRA_PAGE_SIZE = 20
 
-  // Maps frontend sort column + direction to Invenio sort option name
+  // Maps frontend sort column + direction to Invenio sort option name (server-side).
+  // Columns with clientOnly:true are sorted on the current page only (field not indexed for global sort).
   const SORT_OPTIONS = {
-    scanId:    { asc: 'native_id',    desc: 'native_id_desc' },
-    precMz:    { asc: 'precmz',       desc: 'precmz_desc' },
-    charge:    { asc: 'charge',       desc: 'charge_desc' },
+    scanId:     { asc: 'native_id',      desc: 'native_id_desc' },
+    precMz:     { asc: 'precmz',         desc: 'precmz_desc' },
+    charge:     { asc: 'charge',         desc: 'charge_desc' },
+    polarity:   { asc: 'polarity',       desc: 'polarity_desc' },
+    fragMethod: { asc: 'frag_method',    desc: 'frag_method_desc' },
+    runId:      { asc: 'run_id',         desc: 'run_id_desc' },
+    dataset:    { asc: 'dataset',        desc: 'dataset_desc' },
+    msLevel:    { asc: 'ms_level',         desc: 'ms_level_desc' },
+    instrument: { asc: 'instrument_model', desc: 'instrument_model_desc' },
   }
 
   async function searchSpectra(page = 0, overrideSort) {
     setSearching(true); setSearchError('')
+    setMzSearchResults(null)
     if (page === 0) setSearchResults(null)
 
     const minMz = parseFloat(precursorMzMin)
@@ -392,6 +409,7 @@ function App() {
     if (!mzFile) { setMzSearchError('Please select an mzML file.'); return }
     setMzSearching(true)
     setMzSearchError('')
+    setSearchResults(null)
     setMzSearchResults(null)
     setMzSearchProgress('Parsing mzML…')
 
@@ -515,7 +533,7 @@ function App() {
 
       {/* ── login modal ── */}
       {showLoginModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { setShowLoginModal(false); setLoginError('') }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { setShowLoginModal(false); setLoginError(''); setPendingTab(null) }}>
           <div className="rounded-2xl bg-white/10 backdrop-blur p-6 w-full max-w-sm flex flex-col gap-4" onClick={e => e.stopPropagation()}>
             <p className="text-lg font-semibold">Log in</p>
             <form onSubmit={handleLogin} className="flex flex-col gap-3">
@@ -529,7 +547,7 @@ function App() {
               </div>
               {loginError && <p className="text-red-400 text-xs">{loginError}</p>}
               <div className="flex justify-end gap-2 mt-1">
-                <button type="button" className="rounded-full bg-white/15 px-4 py-2 text-sm text-white" onClick={() => { setShowLoginModal(false); setLoginError('') }}>Cancel</button>
+                <button type="button" className="rounded-full bg-white/15 px-4 py-2 text-sm text-white" onClick={() => { setShowLoginModal(false); setLoginError(''); setPendingTab(null) }}>Cancel</button>
                 <button type="submit" className="rounded-full bg-white px-4 py-2 text-sm text-slate-950" disabled={loggingIn}>{loggingIn ? 'Logging in…' : 'Log in'}</button>
               </div>
             </form>
@@ -549,7 +567,7 @@ function App() {
             Search
           </button>
           <button
-            onClick={() => user ? setActiveTab('import') : setShowLoginModal(true)}
+            onClick={() => user ? setActiveTab('import') : (setPendingTab('import'), setShowLoginModal(true))}
             title={!user ? 'Log in to access dataset import' : undefined}
             className={`w-full text-left px-3 py-2 text-sm rounded-xl transition-colors flex items-center gap-1.5 ${activeTab === 'import' ? 'bg-white/20 font-semibold' : !user ? 'opacity-40' : 'hover:bg-white/10'}`}
           >
@@ -628,14 +646,13 @@ function App() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button onClick={() => searchSpectra(0)} disabled={searching} className="rounded-full bg-white/15 px-4 py-2 text-sm text-white disabled:opacity-40">
-                    {searching ? 'Searching…' : 'Search Repo'}
+                  <button
+                    onClick={mzFile ? runMzFileSearch : () => searchSpectra(0)}
+                    disabled={mzFile ? (mzSearching || searching) : searching}
+                    className="rounded-full bg-white/15 px-4 py-2 text-sm text-white disabled:opacity-40"
+                  >
+                    Search
                   </button>
-                  {mzFile && (
-                    <button onClick={runMzFileSearch} disabled={mzSearching || searching} className="rounded-full bg-white/15 px-4 py-2 text-sm text-white disabled:opacity-40">
-                      {mzSearching ? (mzSearchProgress || 'Searching…') : 'Search by mzML File'}
-                    </button>
-                  )}
                 </div>
 
                 {(searchError || mzSearchError) && (
@@ -685,17 +702,30 @@ function App() {
                   const sortable = col in SORT_OPTIONS
                   const indicator = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''
                   if (!sortable) return <th className={className ?? ''}>{children}</th>
+                  const clientOnly = SORT_OPTIONS[col]?.clientOnly
                   return (
                     <th
                       className={`sortable${active ? ' sort-active' : ''}${className ? ' ' + className : ''}`}
                       onClick={() => {
                         const newDir = sortCol === col && sortDir === 'asc' ? 'desc' : 'asc'
                         setSortCol(col); setSortDir(newDir)
-                        searchSpectra(0, { col, dir: newDir })
+                        if (!clientOnly) searchSpectra(0, { col, dir: newDir })
                       }}
                     >{children}{indicator}</th>
                   )
                 }
+
+                const sortedRows = (() => {
+                  if (!sortCol || !SORT_OPTIONS[sortCol]?.clientOnly) return rows
+                  const dir = sortDir === 'asc' ? 1 : -1
+                  return [...rows].sort((a, b) => {
+                    const va = a[sortCol] ?? ''
+                    const vb = b[sortCol] ?? ''
+                    if (va < vb) return -dir
+                    if (va > vb) return dir
+                    return 0
+                  })
+                })()
 
                 return (
                   <div className="results">
@@ -716,8 +746,8 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {rows.length > 0
-                          ? rows.map((r, idx) => (
+                        {sortedRows.length > 0
+                          ? sortedRows.map((r, idx) => (
                               <tr key={r.hit.id}>
                                 <td>{spectraPage * SPECTRA_PAGE_SIZE + idx + 1}</td>
                                 <td className="col-name" title={r.scanId}>
