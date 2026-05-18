@@ -339,8 +339,8 @@ function App() {
     if (organism.trim() !== '')
       clauses.push(`metadata.msrun.metadata.samples.cv_params.value:"${organism.trim()}"`)
 
-    const q = clauses.length > 0 ? clauses.join(' AND ') : '*'
-    const params = new URLSearchParams({ q, size: SPECTRA_PAGE_SIZE, page: page + 1 })
+    const params = new URLSearchParams({ size: SPECTRA_PAGE_SIZE, page: page + 1 })
+    if (clauses.length > 0) params.set('q', clauses.join(' AND '))
     const effectiveCol = overrideSort?.col ?? sortCol
     const effectiveDir = overrideSort?.dir ?? sortDir
     const sortOption = effectiveCol && SORT_OPTIONS[effectiveCol]?.[effectiveDir]
@@ -402,7 +402,7 @@ function App() {
       clauses.push(`metadata.spectrum_cv_params.value:"${formula.trim()}"`)
     if (organism.trim() !== '')
       clauses.push(`metadata.msrun.metadata.samples.cv_params.value:"${organism.trim()}"`)
-    return clauses.length > 0 ? clauses.join(' AND ') : '*'
+    return clauses.length > 0 ? clauses.join(' AND ') : null
   }
 
   async function runMzFileSearch() {
@@ -463,7 +463,8 @@ function App() {
       const sp = spectraWithEmb[i]
       setMzSearchProgress(`Searching ${i + 1} / ${spectraWithEmb.length}…`)
 
-      const simParams = new URLSearchParams({ q })
+      const simParams = new URLSearchParams()
+      if (q) simParams.set('q', q)
       const { ok, json } = await apiFetch(`/api/spectrum/records/search-similar?${simParams}`, {
         method: 'POST',
         body: JSON.stringify({ vector: sp.embedding, k: 5 }),
